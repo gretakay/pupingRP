@@ -52,7 +52,7 @@
                 <div id="cell-3" class="border border-slate-200 bg-slate-50 rounded-xl sm:rounded-2xl flex justify-center items-center text-[9px] sm:text-[11px] font-bold text-slate-600 p-1">💈 髮型</div>
                 <div id="cell-6" class="border border-slate-200 bg-slate-50 rounded-xl sm:rounded-2xl flex justify-center items-center text-[9px] sm:text-[11px] font-bold text-slate-600 p-1">🎁 機會</div>
                 <div id="cell-5" class="border border-slate-200 bg-slate-50 rounded-xl sm:rounded-2xl flex justify-center items-center text-[9px] sm:text-[11px] font-bold text-slate-600 p-1">🚶 前進</div>
-                <div id="cell-4" class="border-2 border-amber-400 bg-amber-50 rounded-xl sm:rounded-2xl flex justify-center items-center text-[9px] sm:text-[11px] font-black text-amber-700 shadow-inner p-1">🏆 櫃檯</div>
+                <div id="cell-4" class="border border-slate-200 bg-slate-50 rounded-xl sm:rounded-2xl flex justify-center items-center text-[9px] sm:text-[11px] font-bold text-slate-600 p-1">📍 櫃檯</div>
             </div>
             
             <button id="dice-btn" onclick="rollDice()" class="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm transition transform active:scale-95">🎲 擲骰子</button>
@@ -182,8 +182,7 @@
         function rollDice() {
             document.getElementById('dice-btn').disabled = true;
             const steps = Math.floor(Math.random() * 3) + 1;
-            currentPosition = (currentPosition + steps);
-            if (currentPosition >= 4 && currentPosition < 8 && currentPosition - steps < 4) { currentPosition = 4; } else { currentPosition = currentPosition % 8; }
+            currentPosition = (currentPosition + steps) % 8;
             updatePlayerPosition();
             document.getElementById('game-msg').innerText = `🎲 骰子轉動... 擲出了 ${steps} 點！`;
             setTimeout(() => { triggerMonopolyCell(currentPosition); }, 600);
@@ -195,18 +194,18 @@
         }
 
         function triggerMonopolyCell(pos) {
-            if (pos === 4) {
+            if (pos === 0) {
                 if (score >= 75) { 
                     if (!isMonopolyReviewMode) {
-                        document.getElementById('game-msg').innerHTML = `🎉 <span class='text-emerald-600 font-bold'>考核通過！</span> 獲得首通分數 ${score} 分，第二關解鎖。`;
+                        document.getElementById('game-msg').innerHTML = `🎉 <span class='text-emerald-600 font-bold'>考核通過！</span> 回到起點完成結算，首通分數 ${score} 分，第二關解鎖。`;
                         localStorage.setItem('DressCode', 'Pass');
                         localStorage.setItem('MonopolyScore', score);
                     } else {
-                        document.getElementById('game-msg').innerHTML = `🎉 <span class='text-blue-600 font-bold'>複習完成！</span> 本次得分: ${score} 分 (不影響原本進度)。`;
+                        document.getElementById('game-msg').innerHTML = `🎉 <span class='text-blue-600 font-bold'>複習完成！</span> 回到起點完成本次複習，得分: ${score} 分 (不影響原本進度)。`;
                     }
                     setTimeout(() => { closeMonopolyModal(); renderStageList(); }, 2500);
                 } else { 
-                    resetMonopoly(`專業度僅 ${score} 分（未達 75 分合格標準），考核失敗，請回到起點重新整頓！`); 
+                    document.getElementById('game-msg').innerText = `已回到起點，目前 ${score} 分，未達 75 分，繼續挑戰累積專業度！`;
                 }
                 document.getElementById('dice-btn').disabled = false;
                 return;
