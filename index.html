@@ -86,9 +86,9 @@
 
         async function loadGameData() {
             try {
-                const stagesResponse = await fetch('./data/stages.json');
+                const stagesResponse = await fetch('./data/stages.json', { cache: 'no-store' });
                 ALL_STAGES = await stagesResponse.json();
-                const monopolyResponse = await fetch('./data/monopoly.json');
+                const monopolyResponse = await fetch('./data/monopoly.json', { cache: 'no-store' });
                 monopolyEvents = await monopolyResponse.json();
                 
                 updatePlayerPosition();
@@ -106,6 +106,8 @@
             zone.innerHTML = '';
             const isMonopolyPassed = localStorage.getItem('DressCode') === 'Pass';
             const monopolySavedScore = localStorage.getItem('MonopolyScore');
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
 
             // 1. 第一關：大富翁
             const monopolyCard = document.createElement('div');
@@ -134,16 +136,20 @@
             // 2. 第二關：13項值班挑戰
             ALL_STAGES.forEach(stage => {
                 const isPassed = localStorage.getItem(stage.id) === 'Completed';
+                const openDate = stage.openDate ? new Date(`${stage.openDate}T00:00:00`) : null;
+                const isDateOpen = !openDate || today >= openDate;
+                const isUnlocked = isMonopolyPassed && isDateOpen;
                 const card = document.createElement('div');
                 card.className = `p-3.5 sm:p-4 rounded-2xl border transition-all flex items-center justify-between ${
                     isPassed ? 'bg-emerald-50 border-emerald-300 cursor-pointer hover:bg-emerald-50' :
-                    isMonopolyPassed ? 'bg-indigo-50/40 border-indigo-200 cursor-pointer hover:bg-indigo-50' : 'bg-slate-50 border-slate-200 opacity-60'
+                    isUnlocked ? 'bg-indigo-50/40 border-indigo-200 cursor-pointer hover:bg-indigo-50' : 'bg-slate-50 border-slate-200 opacity-60'
                 }`;
 
-                if (isMonopolyPassed) { card.onclick = () => startStoryStage(stage.id); }
+                if (isUnlocked || isPassed) { card.onclick = () => startStoryStage(stage.id); }
 
                 let statusBadge = `<span class="text-xs font-bold text-rose-400">🔒 需先通過服儀關</span>`;
-                if (isMonopolyPassed && !isPassed) { statusBadge = `<span class="text-xs font-bold text-indigo-600 animate-pulse">⚔️ 開始值班挑戰</span>`; } 
+                if (isMonopolyPassed && !isDateOpen) { statusBadge = `<span class="text-xs font-bold text-amber-500">⏳ ${stage.openDate} 開放</span>`; }
+                else if (isUnlocked && !isPassed) { statusBadge = `<span class="text-xs font-bold text-indigo-600 animate-pulse">⚔️ 開始值班挑戰</span>`; } 
                 else if (isPassed) { statusBadge = `<span class="text-xs font-bold text-emerald-600">✅ 考核完成 (可複習)</span>`; }
 
                 card.innerHTML = `<div class="flex items-center gap-3 sm:gap-4 text-left"><div class="text-2xl sm:text-3xl">${stage.icon}</div><div><h3 class="font-black text-slate-700 text-sm sm:text-base">${stage.title}</h3><p class="text-[11px] text-slate-400 mt-0.5">${stage.desc}</p></div></div><div>${statusBadge}</div>`;
@@ -152,6 +158,7 @@
         }
 
         function openMonopolyModal() { 
+            isReviewMode = false;
             if (localStorage.getItem('DressCode') === 'Pass') {
                 isMonopolyReviewMode = true;
                 document.getElementById('monopoly-title-ui').innerText = "🔄 服儀大富翁 (複習模式)";
@@ -194,7 +201,6 @@
                         localStorage.setItem('DressCode', 'Pass');
                         localStorage.setItem('MonopolyScore', score);
                     } else {
-                        const oldScore = localStorage.getItem('MonopolyScore');
                         document.getElementById('game-msg').innerHTML = `🎉 <span class='text-blue-600 font-bold'>複習完成！</span> 本次得分: ${score} 分 (不影響原本進度)。`;
                     }
                     setTimeout(() => { closeMonopolyModal(); renderStageList(); }, 2500);
@@ -225,12 +231,24 @@
                             document.getElementById('game-msg').innerText = "答案正確！專業度獲得提升！";
                             document.getElementById('dice-btn').disabled = false;
                         } else {
+                            const penalty = Number(opt.penalty) || 0;
+                            if (penalty > 0) {
+                                score = Math.max(0, score - penalty);
+                                document.getElementById('score-display').innerText = `${score} 分`;
+                                document.getElementById('score-display').className = "text-base sm:text-lg font-black text-rose-500";
+                            }
                             isReviewMode = true;
                             showModal({
                                 bg: "from-rose-500 to-red-600", icon: "❌", title: "服儀規格不符！", tag: "💡 錯誤分析詳解", text: opt.feedback,
                                 options: [{
                                     text: "我了解了，回關卡繼續努力",
-                                    action: () => { closeModal(); document.getElementById('game-msg').innerText = "剛剛答錯了，錯失加分機會！請繼續前進。"; document.getElementById('dice-btn').disabled = false; }
+                                    action: () => {
+                                        closeModal();
+                                        document.getElementById('game-msg').innerText = penalty > 0
+                                            ? `剛剛答錯了，扣 ${penalty} 分。請繼續前進。`
+                                            : "剛剛答錯了，錯失加分機會！請繼續前進。";
+                                        document.getElementById('dice-btn').disabled = false;
+                                    }
                                 }]
                             });
                         }
@@ -246,7 +264,12 @@
             updatePlayerPosition(); document.getElementById('game-msg').innerText = msg;
         }
 
-        function startStoryStage(stageId) { currentStoryStageId = stageId; currentStoryNode = "start"; renderStoryNode(); }
+        function startStoryStage(stageId) {
+            isReviewMode = false;
+            currentStoryStageId = stageId;
+            currentStoryNode = "start";
+            renderStoryNode();
+        }
 
         function renderStoryNode() {
             const stage = ALL_STAGES.find(s => s.id === currentStoryStageId);
