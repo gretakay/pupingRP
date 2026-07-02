@@ -22,7 +22,7 @@
 
     <div class="w-full max-w-xl bg-white rounded-[2rem] shadow-xl p-5 sm:p-7 md:p-8 border border-indigo-100 mt-2 sm:mt-4 transition-all">
         <h2 class="text-xl sm:text-2xl font-black text-slate-800 mb-1 flex items-center gap-2">🗺️ pupingRP 修煉地圖</h2>
-        <p class="text-xs text-slate-400 mb-5 sm:mb-6">每週更新，通過前置考核並在開放時間後即可解鎖關卡。</p>
+        <p class="text-xs text-slate-400 mb-5 sm:mb-6">完成首關服儀特訓，解鎖專業護班值班實戰挑戰。</p>
         
         <div id="stage-list-zone" class="space-y-3 sm:space-y-4"></div>
     </div>
@@ -30,13 +30,13 @@
     <div id="monopoly-modal" class="hidden fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-40 overflow-y-auto">
         <div class="bg-white rounded-[2rem] sm:rounded-[2.5rem] max-w-md w-full overflow-hidden shadow-2xl border border-white/20 p-4 sm:p-6 text-center my-auto transition-all">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg sm:text-xl font-black text-slate-800 flex items-center gap-1.5">🎲 第一關：服儀大富翁</h2>
+                <h2 id="monopoly-title-ui" class="text-lg sm:text-xl font-black text-slate-800 flex items-center gap-1.5">🎲 第一關：服儀大富翁</h2>
                 <button onclick="closeMonopolyModal()" class="w-7 h-7 sm:w-8 sm:h-8 bg-slate-100 text-slate-500 rounded-full font-bold text-xs sm:text-sm hover:bg-slate-200 transition flex items-center justify-center">✕</button>
             </div>
             
             <div class="bg-indigo-50/60 rounded-xl py-2 px-3 mb-4 flex justify-between items-center text-xs sm:text-sm">
-                <span class="font-bold text-slate-500">專業度分數</span>
-                <span id="score-display" class="text-base sm:text-lg font-black text-emerald-500">100 分</span>
+                <span id="score-label-ui" class="font-bold text-slate-500">當前考核專業度</span>
+                <span id="score-display" class="text-base sm:text-lg font-black text-emerald-500">0 分</span>
             </div>
             
             <div class="grid-board w-full aspect-square mb-4 max-w-[320px] sm:max-w-full mx-auto">
@@ -62,16 +62,13 @@
     <div id="game-modal" class="hidden fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto">
         <div id="modal-card" class="bg-white rounded-[2rem] sm:rounded-[2.5rem] max-w-md w-full overflow-hidden shadow-2xl relative my-auto transition-all duration-300 scale-100">
             <button onclick="closeModal()" class="absolute top-3 right-3 sm:top-4 sm:right-4 w-7 h-7 sm:w-8 sm:h-8 bg-black/20 text-white rounded-full font-bold text-xs sm:text-sm flex items-center justify-center hover:bg-black/30 transition z-10">✕</button>
-            
             <div id="modal-header-bg" class="pt-8 sm:pt-10 pb-5 sm:pb-6 px-4 sm:px-6 flex flex-col items-center text-white">
                 <div id="modal-icon" class="w-16 h-16 sm:w-20 sm:h-20 bg-white rounded-full shadow-xl flex items-center justify-center mb-3 sm:mb-4 text-3xl sm:text-4xl"></div>
                 <h2 id="modal-title" class="text-lg sm:text-xl font-black mb-0.5 tracking-wide text-center"></h2>
             </div>
-            
             <div class="p-4 sm:p-6 bg-white text-center">
                 <div id="modal-tag" class="inline-flex items-center bg-amber-50 border border-amber-200 text-amber-700 rounded-full px-3.5 sm:px-4 py-0.5 sm:py-1 text-[11px] sm:text-xs font-bold mb-3 sm:mb-4 shadow-sm"></div>
                 <p id="modal-text" class="text-sm sm:text-base font-bold text-slate-700 leading-relaxed mb-5 sm:mb-6 text-left px-1 sm:px-2"></p>
-                
                 <div id="modal-options" class="space-y-2.5 sm:space-y-3"></div>
             </div>
         </div>
@@ -81,10 +78,11 @@
         let ALL_STAGES = [];
         let monopolyEvents = {};
         let currentPosition = 0;
-        let score = 100;
+        let score = 0; 
         let currentStoryStageId = null;
         let currentStoryNode = "start";
-        let isReviewMode = false; // 是否處於答錯檢視詳解模式
+        let isReviewMode = false; 
+        let isMonopolyReviewMode = false; 
 
         async function loadGameData() {
             try {
@@ -102,61 +100,78 @@
 
         window.onload = loadGameData;
 
+        // 簡化為雙關卡渲染
         function renderStageList() {
             const zone = document.getElementById('stage-list-zone');
             zone.innerHTML = '';
             const isMonopolyPassed = localStorage.getItem('DressCode') === 'Pass';
-            const today = new Date();
+            const monopolySavedScore = localStorage.getItem('MonopolyScore');
 
-            // 大富翁關卡大卡片
+            // 1. 第一關：大富翁
             const monopolyCard = document.createElement('div');
             monopolyCard.className = `p-3.5 sm:p-4 rounded-2xl border transition-all flex items-center justify-between ${
-                isMonopolyPassed ? 'bg-emerald-50 border-emerald-300' : 'bg-indigo-50/40 border-indigo-200 cursor-pointer hover:bg-indigo-50'
+                isMonopolyPassed ? 'bg-emerald-50/70 border-emerald-300 cursor-pointer hover:bg-emerald-50' : 'bg-indigo-50/40 border-indigo-200 cursor-pointer hover:bg-indigo-50'
             }`;
-            if (!isMonopolyPassed) { monopolyCard.onclick = openMonopolyModal; }
+            monopolyCard.onclick = openMonopolyModal;
+
+            let monopolyStatusBadge = '<span class="text-xs font-bold text-indigo-600 animate-pulse">⚔️ 開始挑戰</span>';
+            if (isMonopolyPassed) {
+                monopolyStatusBadge = `<span class="text-xs font-bold text-emerald-600 flex flex-col items-end"><span>✅ 考核通過</span><span class="text-[10px] font-normal text-slate-400 mt-0.5">成績: ${monopolySavedScore}分 (可複習)</span></span>`;
+            }
+
             monopolyCard.innerHTML = `
-                <div class="flex items-center gap-3 sm:get-4 text-left">
+                <div class="flex items-center gap-3 sm:gap-4 text-left">
                     <div class="text-2xl sm:text-3xl">🎲</div>
                     <div>
                         <h3 class="font-black text-slate-700 text-sm sm:text-base">第一關：服儀大富翁</h3>
-                        <p class="text-[11px] text-slate-400 mt-0.5">點擊進入，完成基礎服儀特訓</p>
+                        <p class="text-[11px] text-slate-400 mt-0.5">${isMonopolyPassed ? '您已取得過關證書，點擊即可再次進入複習' : '點擊進入，完成基礎服儀特訓'}</p>
                     </div>
                 </div>
-                <div>${isMonopolyPassed ? '<span class="text-xs font-bold text-emerald-600">✅ 考核完成</span>' : '<span class="text-xs font-bold text-indigo-600 animate-pulse">⚔️ 開始挑戰</span>'}</div>
+                <div>${monopolyStatusBadge}</div>
             `;
             zone.appendChild(monopolyCard);
 
-            // 渲染後續單元
+            // 2. 第二關：13項值班挑戰
             ALL_STAGES.forEach(stage => {
-                const targetDate = new Date(stage.openDate);
-                const isTimeReached = today >= targetDate;
-                const isUnlocked = isMonopolyPassed && isTimeReached;
                 const isPassed = localStorage.getItem(stage.id) === 'Completed';
-
                 const card = document.createElement('div');
                 card.className = `p-3.5 sm:p-4 rounded-2xl border transition-all flex items-center justify-between ${
-                    isPassed ? 'bg-emerald-50 border-emerald-300' :
-                    isUnlocked ? 'bg-indigo-50/40 border-indigo-200 cursor-pointer hover:bg-indigo-50' : 'bg-slate-50 border-slate-200 opacity-60'
+                    isPassed ? 'bg-emerald-50 border-emerald-300 cursor-pointer hover:bg-emerald-50' :
+                    isMonopolyPassed ? 'bg-indigo-50/40 border-indigo-200 cursor-pointer hover:bg-indigo-50' : 'bg-slate-50 border-slate-200 opacity-60'
                 }`;
 
-                if (isUnlocked && !isPassed) { card.onclick = () => startStoryStage(stage.id); }
+                if (isMonopolyPassed) { card.onclick = () => startStoryStage(stage.id); }
 
-                let statusBadge = `<span class="text-xs font-bold text-slate-400">🔒 尚未開放</span>`;
-                if (!isMonopolyPassed) { statusBadge = `<span class="text-xs font-bold text-rose-400">🔒 需先通過服儀關</span>`; } 
-                else if (!isTimeReached) { statusBadge = `<span class="text-xs font-bold text-amber-500">⏳ 預計 ${stage.openDate} 開放</span>`; } 
-                else if (isUnlocked && !isPassed) { statusBadge = `<span class="text-xs font-bold text-indigo-600 animate-pulse">⚔️ 開始關卡</span>`; } 
-                else if (isPassed) { statusBadge = `<span class="text-xs font-bold text-emerald-600">✅ 考核完成</span>`; }
+                let statusBadge = `<span class="text-xs font-bold text-rose-400">🔒 需先通過服儀關</span>`;
+                if (isMonopolyPassed && !isPassed) { statusBadge = `<span class="text-xs font-bold text-indigo-600 animate-pulse">⚔️ 開始值班挑戰</span>`; } 
+                else if (isPassed) { statusBadge = `<span class="text-xs font-bold text-emerald-600">✅ 考核完成 (可複習)</span>`; }
 
                 card.innerHTML = `<div class="flex items-center gap-3 sm:gap-4 text-left"><div class="text-2xl sm:text-3xl">${stage.icon}</div><div><h3 class="font-black text-slate-700 text-sm sm:text-base">${stage.title}</h3><p class="text-[11px] text-slate-400 mt-0.5">${stage.desc}</p></div></div><div>${statusBadge}</div>`;
                 zone.appendChild(card);
             });
         }
 
-        function openMonopolyModal() { document.getElementById('monopoly-modal').classList.remove('hidden'); }
+        function openMonopolyModal() { 
+            if (localStorage.getItem('DressCode') === 'Pass') {
+                isMonopolyReviewMode = true;
+                document.getElementById('monopoly-title-ui').innerText = "🔄 服儀大富翁 (複習模式)";
+                document.getElementById('score-label-ui').innerText = "本次複習專業度";
+            } else {
+                isMonopolyReviewMode = false;
+                document.getElementById('monopoly-title-ui').innerText = "🎲 第一關：服儀大富翁";
+                document.getElementById('score-label-ui').innerText = "當前考核專業度";
+            }
+            currentPosition = 0; score = 0;
+            document.getElementById('score-display').innerText = `0 分`;
+            document.getElementById('score-display').className = "text-base sm:text-lg font-black text-emerald-500";
+            document.getElementById('game-msg').innerText = isMonopolyReviewMode ? "進入複習模式！挑戰不影響下關解鎖狀態。" : "點擊上方按鈕開始值班準備！";
+            updatePlayerPosition();
+            document.getElementById('monopoly-modal').classList.remove('hidden'); 
+        }
+        
         function closeMonopolyModal() { document.getElementById('monopoly-modal').classList.add('hidden'); }
 
         function rollDice() {
-            if (score < 60) return;
             document.getElementById('dice-btn').disabled = true;
             const steps = Math.floor(Math.random() * 3) + 1;
             currentPosition = (currentPosition + steps);
@@ -173,25 +188,29 @@
 
         function triggerMonopolyCell(pos) {
             if (pos === 4) {
-                if (score >= 80) {
-                    document.getElementById('game-msg').innerHTML = "🎉 <span class='text-emerald-600 font-bold'>服儀通過！</span> 修煉地圖已為您開啟。";
-                    localStorage.setItem('DressCode', 'Pass');
-                    setTimeout(() => { closeMonopolyModal(); renderStageList(); }, 1500);
-                } else { resetMonopoly("專業度不足 80 分，請重回起點整頓服儀！"); }
+                if (score >= 75) { 
+                    if (!isMonopolyReviewMode) {
+                        document.getElementById('game-msg').innerHTML = `🎉 <span class='text-emerald-600 font-bold'>考核通過！</span> 獲得首通分數 ${score} 分，第二關解鎖。`;
+                        localStorage.setItem('DressCode', 'Pass');
+                        localStorage.setItem('MonopolyScore', score);
+                    } else {
+                        const oldScore = localStorage.getItem('MonopolyScore');
+                        document.getElementById('game-msg').innerHTML = `🎉 <span class='text-blue-600 font-bold'>複習完成！</span> 本次得分: ${score} 分 (不影響原本進度)。`;
+                    }
+                    setTimeout(() => { closeMonopolyModal(); renderStageList(); }, 2500);
+                } else { 
+                    resetMonopoly(`專業度僅 ${score} 分（未達 75 分合格標準），考核失敗，請回到起點重新整頓！`); 
+                }
                 document.getElementById('dice-btn').disabled = false;
                 return;
             }
             if (monopolyEvents[pos]) {
-                const data = monopolyEvents[pos];
-                isReviewMode = false;
-                showQuizUI(data, pos);
+                const data = monopolyEvents[pos]; isReviewMode = false; showQuizUI(data, pos);
             } else {
-                document.getElementById('game-msg').innerText = "安全通過，繼續整備！";
-                document.getElementById('dice-btn').disabled = false;
+                document.getElementById('game-msg').innerText = "安全通過，繼續整備！"; document.getElementById('dice-btn').disabled = false;
             }
         }
 
-        // 顯示大富翁題目與判定邏輯 (新增答錯強制詳解畫面)
         function showQuizUI(data, pos) {
             showModal({
                 bg: "from-blue-400 to-indigo-500", icon: data.icon, title: data.title, tag: data.tag, text: data.text,
@@ -199,32 +218,19 @@
                     text: opt.text,
                     action: () => {
                         if (opt.correct) {
-                            // 答對邏輯
+                            score += 25; 
+                            document.getElementById('score-display').innerText = `${score} 分`;
+                            document.getElementById('score-display').className = "text-base sm:text-lg font-black text-emerald-500";
                             closeModal();
-                            document.getElementById('game-msg').innerText = opt.feedback;
+                            document.getElementById('game-msg').innerText = "答案正確！專業度獲得提升！";
                             document.getElementById('dice-btn').disabled = false;
                         } else {
-                            // 答錯邏輯：扣分，並強制切換成「錯誤警告紅詳解視窗」
-                            score -= opt.penalty;
-                            document.getElementById('score-display').innerText = `${score} 分`;
-                            document.getElementById('score-display').className = "text-base sm:text-lg font-black text-rose-500 animate-pulse";
-                            
-                            // 轉成紅色警示畫面告訴他錯在哪
                             isReviewMode = true;
                             showModal({
-                                bg: "from-rose-500 to-red-600",
-                                icon: "❌",
-                                title: "服儀規格不符！",
-                                tag: "💡 錯誤分析詳解",
-                                text: opt.feedback, // 將詳解文字放到內文
+                                bg: "from-rose-500 to-red-600", icon: "❌", title: "服儀規格不符！", tag: "💡 錯誤分析詳解", text: opt.feedback,
                                 options: [{
                                     text: "我了解了，回關卡繼續努力",
-                                    action: () => {
-                                        closeModal();
-                                        document.getElementById('game-msg').innerText = "剛剛答錯了，專業度下降！請繼續前進修正。";
-                                        if (score < 60) { resetMonopoly("⚠️ 分數低於 60，不及格！退回起點！"); }
-                                        document.getElementById('dice-btn').disabled = false;
-                                    }
+                                    action: () => { closeModal(); document.getElementById('game-msg').innerText = "剛剛答錯了，錯失加分機會！請繼續前進。"; document.getElementById('dice-btn').disabled = false; }
                                 }]
                             });
                         }
@@ -234,55 +240,53 @@
         }
 
         function resetMonopoly(msg) {
-            currentPosition = 0; score = 100;
-            document.getElementById('score-display').innerText = `100 分`;
+            currentPosition = 0; score = 0;
+            document.getElementById('score-display').innerText = `0 分`;
             document.getElementById('score-display').className = "text-base sm:text-lg font-black text-emerald-500";
-            updatePlayerPosition();
-            document.getElementById('game-msg').innerText = msg;
+            updatePlayerPosition(); document.getElementById('game-msg').innerText = msg;
         }
 
-        // 劇情單元
-        function startStoryStage(stageId) {
-            currentStoryStageId = stageId;
-            currentStoryNode = "start";
-            renderStoryNode();
-        }
+        function startStoryStage(stageId) { currentStoryStageId = stageId; currentStoryNode = "start"; renderStoryNode(); }
 
         function renderStoryNode() {
             const stage = ALL_STAGES.find(s => s.id === currentStoryStageId);
             const node = stage.script[currentStoryNode];
+            const isStageAlreadyPassed = localStorage.getItem(currentStoryStageId) === 'Completed';
+
             showModal({
-                bg: "from-purple-500 to-indigo-600", icon: "💬", title: stage.title, tag: node.tag, text: node.text,
+                bg: "from-purple-500 to-indigo-600", icon: "🤝", 
+                title: isStageAlreadyPassed ? `${stage.title} (複習模式)` : stage.title, 
+                tag: node.tag, text: node.text,
                 options: node.options.map(opt => ({
                     text: opt.text,
                     action: () => {
-                        if (opt.resetStory) { closeModal(); } 
-                        else if (opt.finishStory) { localStorage.setItem(currentStoryStageId, 'Completed'); closeModal(); renderStageList(); } 
-                        else { currentStoryNode = opt.next; renderStoryNode(); }
+                        if (opt.resetStory) { 
+                            currentStoryNode = "start"; renderStoryNode(); 
+                        } else if (opt.finishStory) { 
+                            if (!isStageAlreadyPassed) { localStorage.setItem(currentStoryStageId, 'Completed'); alert("🎉 恭喜圓滿通過一日值班實戰考核！"); } 
+                            else { alert("🔄 複習完成！護班細節掌握得非常棒！"); }
+                            closeModal(); renderStageList(); 
+                        } else { 
+                            currentStoryNode = opt.next; renderStoryNode(); 
+                        }
                     }
                 }))
             });
         }
 
-        // 通用 Modal 控制與 RWD 按鈕渲染
         function showModal(config) {
             document.getElementById('modal-header-bg').className = `bg-gradient-to-b ${config.bg} pt-8 sm:pt-10 pb-5 sm:pb-6 px-4 sm:px-6 flex flex-col items-center text-white`;
             document.getElementById('modal-icon').innerText = config.icon;
             document.getElementById('modal-title').innerText = config.title;
             document.getElementById('modal-tag').innerText = config.tag;
             document.getElementById('modal-text').innerText = config.text;
-            
-            const optZone = document.getElementById('modal-options');
-            optZone.innerHTML = '';
+            const optZone = document.getElementById('modal-options'); optZone.innerHTML = '';
             config.options.forEach(opt => {
                 const btn = document.createElement('button');
-                // 如果是檢視詳解模式，按鈕變藍色引導，否則為原來的精美粉橘漸層
                 btn.className = isReviewMode 
                     ? "w-full text-center bg-gradient-to-r from-blue-500 to-indigo-600 hover:opacity-90 text-white font-black py-2.5 sm:py-3 px-4 rounded-full text-xs sm:text-sm transition transform active:scale-95 btn-glow-blue tracking-wider"
-                    : "w-full text-center bg-gradient-to-r from-pink-400 via-orange-400 to-yellow-400 hover:opacity-90 text-white font-black py-2.5 sm:py-3 px-4 rounded-full text-xs sm:text-sm transition transform active:scale-95 btn-glow tracking-wider";
-                btn.innerText = opt.text;
-                btn.onclick = opt.action;
-                optZone.appendChild(btn);
+                    : "w-full text-left bg-gradient-to-r from-pink-400 via-orange-400 to-yellow-400 hover:opacity-90 text-white font-black py-2.5 sm:py-3 px-4 rounded-xl text-xs sm:text-sm transition transform active:scale-95 btn-glow tracking-wider";
+                btn.innerText = opt.text; btn.onclick = opt.action; optZone.appendChild(btn);
             });
             document.getElementById('game-modal').classList.remove('hidden');
         }
