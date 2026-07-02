@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pupingRP - 照客線上闖關系統</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        .grid-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 10px; }
+        .btn-glow { box-shadow: 0 10px 20px -5px rgba(244, 63, 94, 0.4); }
+    </style>
+</head>
+<body class="bg-indigo-50/60 font-sans min-h-screen flex flex-col items-center justify-start p-4 md:p-8">
+
+    <div class="max-w-4xl w-full grid grid-cols-1 md:grid-cols-3 gap-6 items-start mt-4">
+        <div class="bg-white rounded-[2rem] shadow-xl p-5 border border-indigo-100 text-center">
+            <h2 class="text-xl font-black text-slate-800 mb-1">🎲 第一關：服儀大富翁</h2>
+            <div class="bg-indigo-50/60 rounded-xl py-2 px-3 mb-4 flex justify-between items-center mt-3">
+                <span class="text-xs font-bold text-slate-500">專業度分數</span>
+                <span id="score-display" class="text-lg font-black text-emerald-500">100 分</span>
+            </div>
+            
+            <div class="grid-board w-full aspect-square mb-4">
+                <div id="cell-0" class="border border-indigo-200 bg-indigo-50 rounded-xl flex flex-col justify-center items-center text-[10px] font-black text-indigo-700 relative shadow-inner">
+                    起點
+                    <div id="player" class="absolute w-5 h-5 bg-rose-500 border-2 border-white rounded-full shadow transition-all duration-300"></div>
+                </div>
+                <div id="cell-1" class="border border-slate-200 bg-slate-50 rounded-xl flex justify-center items-center text-[10px] font-bold text-slate-600">👔 衣服</div>
+                <div id="cell-2" class="border border-slate-200 bg-slate-50 rounded-xl flex justify-center items-center text-[10px] font-bold text-slate-600">🧦 襪子</div>
+                <div id="cell-7" class="border border-slate-200 bg-slate-50 rounded-xl flex justify-center items-center text-[10px] font-bold text-slate-600">🛑 抽查</div>
+                <div class="bg-white flex items-center justify-center text-xl animate-bounce">🧭</div>
+                <div id="cell-3" class="border border-slate-200 bg-slate-50 rounded-xl flex justify-center items-center text-[10px] font-bold text-slate-600">💈 髮型</div>
+                <div id="cell-6" class="border border-slate-200 bg-slate-50 rounded-xl flex justify-center items-center text-[10px] font-bold text-slate-600">🎁 機會</div>
+                <div id="cell-5" class="border border-slate-200 bg-slate-50 rounded-xl flex justify-center items-center text-[10px] font-bold text-slate-600">🚶 前進</div>
+                <div id="cell-4" class="border-2 border-amber-400 bg-amber-50 rounded-xl flex justify-center items-center text-[10px] font-black text-amber-700 shadow-inner">🏆 櫃檯</div>
+            </div>
+            
+            <button id="dice-btn" onclick="rollDice()" class="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-3 rounded-xl text-sm">🎲 擲骰子</button>
+            <p id="game-msg" class="text-xs font-medium text-slate-500 mt-3 bg-slate-50 p-2 rounded-lg min-h-[40px] flex items-center justify-center">載入中...</p>
+        </div>
+
+        <div class="md:col-span-2 bg-white rounded-[2rem] shadow-xl p-6 border border-indigo-100">
+            <h2 class="text-2xl font-black text-slate-800 mb-1">🗺️ pupingRP 修煉地圖</h2>
+            <p class="text-xs text-slate-400 mb-6">每週更新，通過前置考核並在開放時間後即可解鎖關卡。</p>
+            <div id="stage-list-zone" class="space-y-4"></div>
+        </div>
+    </div>
+
+    <div id="game-modal" class="hidden fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-[2.5rem] max-w-md w-full overflow-hidden shadow-2xl relative">
+            <button onclick="closeModal()" class="absolute top-4 right-4 w-8 h-8 bg-black/20 text-white rounded-full font-bold text-sm">✕</button>
+            <div id="modal-header-bg" class="pt-10 pb-6 px-6 flex flex-col items-center text-white">
+                <div id="modal-icon" class="w-20 h-20 bg-white rounded-full shadow-xl flex items-center justify-center mb-4 text-4xl"></div>
+                <h2 id="modal-title" class="text-xl font-black mb-1"></h2>
+            </div>
+            <div class="p-6 bg-white text-center">
+                <div id="modal-tag" class="inline-flex items-center bg-amber-50 border border-amber-200 text-amber-700 rounded-full px-4 py-1 text-xs font-bold mb-4"></div>
+                <p id="modal-text" class="text-base font-bold text-slate-700 leading-relaxed mb-6 text-left px-2"></p>
+                <div id="modal-options" class="space-y-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ALL_STAGES = [];
+        let monopolyEvents = {};
+        let currentPosition = 0;
+        let score = 100;
+        let currentStoryStageId = null;
+        let currentStoryNode = "start";
+
+        // ✨ 核心：自動讀取本地/雲端的 JSON 題目設定檔
+        async function loadGameData() {
+            try {
+                const stagesResponse = await fetch('./data/stages.json');
+                ALL_STAGES = await stagesResponse.json();
+                const monopolyResponse = await fetch('./data/monopoly.json');
+                monopolyEvents = await monopolyResponse.json();
+                
+                document.getElementById('game-msg').innerText = "點擊上方按鈕開始值班準備！";
+                updatePlayerPosition();
+                renderStageList();
+            } catch (error) {
+                document.getElementById('game-msg').innerText = "❌ 讀取關卡資料失敗，請確認路徑正確。";
+                console.error(error);
+            }
+        }
+
+        window.onload = loadGameData;
+
+        function renderStageList() {
+            const zone = document.getElementById('stage-list-zone');
+            zone.innerHTML = '';
+            const isMonopolyPassed = localStorage.getItem('DressCode') === 'Pass';
+            const today = new Date();
+
+            ALL_STAGES.forEach(stage => {
+                const targetDate = new Date(stage.openDate);
+                const isTimeReached = today >= targetDate;
+                const isUnlocked = isMonopolyPassed && isTimeReached;
+                const isPassed = localStorage.getItem(stage.id) === 'Completed';
+
+                const card = document.createElement('div');
+                card.className = `p-4 rounded-2xl border transition-all flex items-center justify-between ${
+                    isPassed ? 'bg-emerald-50 border-emerald-300' :
+                    isUnlocked ? 'bg-indigo-50/40 border-indigo-200 cursor-pointer hover:bg-indigo-50' : 'bg-slate-50 border-slate-200 opacity-60'
+                }`;
+
+                if (isUnlocked && !isPassed) { card.onclick = () => startStoryStage(stage.id); }
+
+                let statusBadge = `<span class="text-xs font-bold text-slate-400">🔒 尚未開放</span>`;
+                if (!isMonopolyPassed) { statusBadge = `<span class="text-xs font-bold text-rose-400">🔒 需先通過服儀關</span>`; } 
+                else if (!isTimeReached) { statusBadge = `<span class="text-xs font-bold text-amber-500">⏳ 預計 ${stage.openDate} 開放</span>`; } 
+                else if (isUnlocked && !isPassed) { statusBadge = `<span class="text-xs font-bold text-indigo-600 animate-pulse">⚔️ 開始關卡</span>`; } 
+                else if (isPassed) { statusBadge = `<span class="text-xs font-bold text-emerald-600">✅ 考核完成</span>`; }
+
+                card.innerHTML = `<div class="flex items-center gap-4"><div class="text-3xl">${stage.icon}</div><div><h3 class="font-black text-slate-700 text-base">${stage.title}</h3><p class="text-xs text-slate-400 mt-0.5">${stage.desc}</p></div></div><div>${statusBadge}</div>`;
+                zone.appendChild(card);
+            });
+        }
+
+        function rollDice() {
+            if (score < 60) return;
+            document.getElementById('dice-btn').disabled = true;
+            const steps = Math.floor(Math.random() * 3) + 1;
+            currentPosition = (currentPosition + steps);
+            if (currentPosition >= 4 && currentPosition < 8 && currentPosition - steps < 4) { currentPosition = 4; } else { currentPosition = currentPosition % 8; }
+            updatePlayerPosition();
+            document.getElementById('game-msg').innerText = `🎲 骰子轉動... 擲出了 ${steps} 點！`;
+            setTimeout(() => { triggerMonopolyCell(currentPosition); }, 600);
+        }
+
+        function updatePlayerPosition() {
+            const cell = document.getElementById(`cell-${currentPosition}`);
+            if(cell) cell.appendChild(document.getElementById('player'));
+        }
+
+        function triggerMonopolyCell(pos) {
+            if (pos === 4) {
+                if (score >= 80) {
+                    document.getElementById('game-msg').innerHTML = "🎉 <span class='text-emerald-600 font-bold'>服儀通過！</span> 地圖已為您開啟。";
+                    localStorage.setItem('DressCode', 'Pass');
+                    renderStageList();
+                } else { resetMonopoly("專業度不足 80 分，請重回起點整頓服儀！"); }
+                document.getElementById('dice-btn').disabled = false;
+                return;
+            }
+            if (monopolyEvents[pos]) {
+                const data = monopolyEvents[pos];
+                showModal({
+                    bg: "from-blue-400 to-indigo-500", icon: data.icon, title: data.title, tag: data.tag, text: data.text,
+                    options: data.options.map(opt => ({
+                        text: opt.text,
+                        action: () => {
+                            closeModal();
+                            if (!opt.correct) {
+                                score -= opt.penalty;
+                                document.getElementById('score-display').innerText = `${score} 分`;
+                                document.getElementById('score-display').className = "text-lg font-black text-rose-500";
+                            }
+                            document.getElementById('game-msg').innerText = opt.feedback;
+                            if (score < 60) { resetMonopoly("⚠️ 分數低於 60，不及格！退回起點！"); }
+                            document.getElementById('dice-btn').disabled = false;
+                        }
+                    }))
+                });
+            } else {
+                document.getElementById('game-msg').innerText = "安全通過，繼續整備！";
+                document.getElementById('dice-btn').disabled = false;
+            }
+        }
+
+        function resetMonopoly(msg) {
+            currentPosition = 0; score = 100;
+            document.getElementById('score-display').innerText = `100 分`;
+            document.getElementById('score-display').className = "text-lg font-black text-emerald-500";
+            updatePlayerPosition();
+            document.getElementById('game-msg').innerText = msg;
+        }
+
+        function startStoryStage(stageId) {
+            currentStoryStageId = stageId;
+            currentStoryNode = "start";
+            renderStoryNode();
+        }
+
+        function renderStoryNode() {
+            const stage = ALL_STAGES.find(s => s.id === currentStoryStageId);
+            const node = stage.script[currentStoryNode];
+            showModal({
+                bg: "from-purple-500 to-indigo-600", icon: "💬", title: stage.title, tag: node.tag, text: node.text,
+                options: node.options.map(opt => ({
+                    text: opt.text,
+                    action: () => {
+                        if (opt.resetStory) { closeModal(); } 
+                        else if (opt.finishStory) { localStorage.setItem(currentStoryStageId, 'Completed'); closeModal(); renderStageList(); } 
+                        else { currentStoryNode = opt.next; renderStoryNode(); }
+                    }
+                }))
+            });
+        }
+
+        function showModal(config) {
+            document.getElementById('modal-header-bg').className = `bg-gradient-to-b ${config.bg} pt-10 pb-6 px-6 flex flex-col items-center text-white`;
+            document.getElementById('modal-icon').innerText = config.icon;
+            document.getElementById('modal-title').innerText = config.title;
+            document.getElementById('modal-tag').innerText = config.tag;
+            document.getElementById('modal-text').innerText = config.text;
+            const optZone = document.getElementById('modal-options');
+            optZone.innerHTML = '';
+            config.options.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = "w-full bg-gradient-to-r from-pink-400 via-orange-400 to-yellow-400 hover:opacity-90 text-white font-black py-3 px-4 rounded-full text-sm transition transform active:scale-95 btn-glow shadow-sm tracking-wider";
+                btn.innerText = opt.text;
+                btn.onclick = opt.action;
+                optZone.appendChild(btn);
+            });
+            document.getElementById('game-modal').classList.remove('hidden');
+        }
+
+        function closeModal() { document.getElementById('game-modal').classList.add('hidden'); }
+    </script>
+</body>
+</html>

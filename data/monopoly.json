@@ -1,0 +1,41 @@
+{
+  "1": { 
+    "icon": "👔", 
+    "title": "衣服規格檢查", 
+    "tag": "服儀大作戰", 
+    "text": "請問照客標準制服上身與下身的正確搭配是？", 
+    "options": [
+      { "text": "白色短袖 T 恤 + 黑色長褲", "correct": false, "penalty": 20, "feedback": "💡 長袖！必須是有領的白色長袖襯衫，外加紅色照客背心！" }, 
+      { "text": "有領的白色長袖襯衫 + 黑色長褲 + 紅色照客背心", "correct": true, "penalty": 0, "feedback": "✨ 完全正確！" }
+    ] 
+  },
+  "2": { 
+    "icon": "🧦", 
+    "title": "末端細節危機", 
+    "tag": "服儀大作戰", 
+    "text": "正要穿鞋出門時，襪子應該搭配什麼顏色？", 
+    "options": [
+      { "text": "隨便，白色運動襪或隱形襪都可以。", "correct": false, "penalty": 20, "feedback": "💡 錯！必須搭配整雙「黑色襪子」！" }, 
+      { "text": "必須換上標準黑色襪子。", "correct": true, "penalty": 0, "feedback": "✨ 沒錯，細節滿分！" }
+    ] 
+  },
+  "3": { 
+    "icon": "💈", 
+    "title": "門面精神挑戰", 
+    "tag": "服儀大作戰", 
+    "text": "關於長頭髮與瀏海的整理規定，何者正確？", 
+    "options": [
+      { "text": "夾在兩邊，可以留瀏海稍稍遮住額頭。", "correct": false, "penalty": 20, "feedback": "💡 不行，額頭絕對不能遮到！長髮要綁好梳整齊！" }, 
+      { "text": "長髮扎起梳好，且絕對不能遮到額頭。", "correct": true, "penalty": 0, "feedback": "✨ 非常棒！非常有精神！" }
+    ] 
+  },
+  "7": { 
+    "icon": "🛑", 
+    "title": "主管突擊檢查", 
+    "tag": "機會命運", 
+    "text": "主管迎面走來，雙眼正掃視你的全身上下...", 
+    "options": [
+      { "text": "挺直腰桿，保持微笑接受檢查！", "correct": true, "penalty": 0, "feedback": "✨ 主管滿意地點頭，服儀與微笑都非常標準！" }
+    ] 
+  }
+}
