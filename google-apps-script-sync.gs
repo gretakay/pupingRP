@@ -13,6 +13,11 @@ const STAGE_DEFINITIONS = [
     id: 'reception-duty',
     label: '第二關',
     passValue: 'Completed'
+  },
+  {
+    id: 'desk-duty',
+    label: '第三關',
+    passValue: 'Completed'
   }
 ];
 
