@@ -239,12 +239,14 @@ function getOrCreateSummarySheet(spreadsheet) {
   } else {
     summarySheet.getRange(1, 1, 1, SUMMARY_HEADERS.length).setValues([SUMMARY_HEADERS]);
   }
+  applySummaryColumnFormats(summarySheet);
   return summarySheet;
 }
 
 function resetSummarySheet(summarySheet) {
   summarySheet.clearContents();
   summarySheet.getRange(1, 1, 1, SUMMARY_HEADERS.length).setValues([SUMMARY_HEADERS]);
+  applySummaryColumnFormats(summarySheet);
 }
 
 function writeSummarySheet(summarySheet, records) {
@@ -309,7 +311,12 @@ function applyProgressRowToSummary(summary, row) {
     }
   });
 
-  if (stageCompleted) {
+  const isProfileSavedEvent = stageCompleted === '資料填寫完成';
+
+  if (stageCompleted && !isProfileSavedEvent) {
+    summary.lastStageCompleted = stageCompleted;
+  } else if (!summary.lastStageCompleted && stageCompleted) {
+    // 保留首次資料建立紀錄，但不覆蓋真正關卡完成結果。
     summary.lastStageCompleted = stageCompleted;
   }
 
@@ -420,4 +427,34 @@ function isStageReviewedByEvent(stage, eventType, stageId) {
     return eventType === 'monopoly_review' && stageId === stage.id;
   }
   return eventType === 'stage_review' && stageId === stage.id;
+}
+
+function applySummaryColumnFormats(summarySheet) {
+  if (summarySheet.getMaxColumns() < SUMMARY_HEADERS.length) {
+    summarySheet.insertColumnsAfter(summarySheet.getMaxColumns(), SUMMARY_HEADERS.length - summarySheet.getMaxColumns());
+  }
+
+  const headers = summarySheet.getRange(1, 1, 1, SUMMARY_HEADERS.length).getValues()[0];
+  const lastRow = Math.max(summarySheet.getLastRow(), 2);
+
+  const setFormatByHeader = (headerName, format) => {
+    const colIndex = headers.indexOf(headerName);
+    if (colIndex >= 0) {
+      summarySheet.getRange(2, colIndex + 1, lastRow - 1, 1).setNumberFormat(format);
+    }
+  };
+
+  setFormatByHeader('姓名', '@');
+  setFormatByHeader('法名(沒有不必填寫)', '@');
+  setFormatByHeader('手機末四碼', '@');
+  setFormatByHeader('最後完成進度', '@');
+  setFormatByHeader('最後更新時間', 'yyyy/m/d h:mm:ss');
+
+  STAGE_DEFINITIONS.forEach((stage) => {
+    setFormatByHeader(`${stage.label}狀態`, '@');
+    setFormatByHeader(`${stage.label}複習次數`, '0');
+    if (stage.scoreKey) {
+      setFormatByHeader(`${stage.label}分數`, '0');
+    }
+  });
 }
