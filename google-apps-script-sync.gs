@@ -2,15 +2,32 @@ const SPREADSHEET_ID = '1uFOUf4oeVafkBxjkxOet2SEe4vAbkLBO902TxzMgKEc';
 const RESPONSES_SHEET_NAME = '表單回覆 1';
 const SUMMARY_SHEET_NAME = '進度摘要表';
 
+const STAGE_DEFINITIONS = [
+  {
+    id: 'DressCode',
+    label: '第一關',
+    passValue: 'Pass',
+    scoreKey: 'MonopolyScore'
+  },
+  {
+    id: 'reception-duty',
+    label: '第二關',
+    passValue: 'Completed'
+  }
+];
+
 const SUMMARY_HEADERS = [
   '姓名',
   '法名(沒有不必填寫)',
   '手機末四碼',
-  '第一關狀態',
-  '第一關分數',
-  '第一關複習次數',
-  '第二關狀態',
-  '第二關複習次數',
+  ...STAGE_DEFINITIONS.flatMap((stage) => {
+    const columns = [`${stage.label}狀態`];
+    if (stage.scoreKey) {
+      columns.push(`${stage.label}分數`);
+    }
+    columns.push(`${stage.label}複習次數`);
+    return columns;
+  }),
   '最後完成進度',
   '最後更新時間'
 ];
@@ -81,13 +98,7 @@ function buildProgressPayload(playerName, dharmaName, phoneLast4) {
     playerName,
     dharmaName,
     phoneLast4,
-    progress: {
-      DressCode: refreshedSummary.firstStageStatus === 'Pass' ? 'Pass' : '',
-      MonopolyScore: Number(refreshedSummary.firstStageScore || 0),
-      DressCodeReviewCount: Number(refreshedSummary.firstStageReviewCount || 0),
-      'reception-duty': refreshedSummary.secondStageStatus === 'Completed' ? 'Completed' : '',
-      'reception-dutyReviewCount': Number(refreshedSummary.secondStageReviewCount || 0)
-    },
+    progress: buildProgressFromSummary(refreshedSummary),
     lastUpdated: refreshedSummary.lastUpdated || ''
   };
 }
@@ -175,53 +186,6 @@ function getCell(row, index) {
   return index >= 0 ? String(row[index] || '').trim() : '';
 }
 
-function buildProgressState(rows) {
-  const state = {};
-
-  rows.forEach((row) => {
-    const stageCompleted = normalizeText(row.stageCompleted);
-    const stageId = normalizeText(row.stageId);
-    const eventType = normalizeText(row.eventType);
-    const monopolyScore = Number(row.monopolyScore || 0);
-
-    if (eventType === 'monopoly_pass' || stageCompleted === '第一關完成') {
-      state.DressCode = 'Pass';
-      state.MonopolyScore = Math.max(Number(state.MonopolyScore || 0), monopolyScore || 75);
-    }
-
-    if (eventType === 'monopoly_review') {
-      state.DressCode = 'Pass';
-    }
-
-    if (eventType === 'stage_pass' && stageId === 'reception-duty') {
-      state['reception-duty'] = 'Completed';
-    }
-
-    if (eventType === 'stage_review' && stageId === 'reception-duty') {
-      state['reception-duty'] = 'Completed';
-    }
-
-    if (stageCompleted === '第二關完成') {
-      state['reception-duty'] = 'Completed';
-    }
-
-    const firstStageReviewCount = extractReviewCount(stageCompleted, '第一關');
-    if (firstStageReviewCount > 0) {
-      state.DressCode = 'Pass';
-      state.DressCodeReviewCount = Math.max(Number(state.DressCodeReviewCount || 0), firstStageReviewCount);
-      state.MonopolyScore = Math.max(Number(state.MonopolyScore || 0), monopolyScore || 75);
-    }
-
-    const secondStageReviewCount = extractReviewCount(stageCompleted, '第二關');
-    if (secondStageReviewCount > 0) {
-      state['reception-duty'] = 'Completed';
-      state['reception-dutyReviewCount'] = Math.max(Number(state['reception-dutyReviewCount'] || 0), secondStageReviewCount);
-    }
-  });
-
-  return state;
-}
-
 function extractReviewCount(stageCompleted, stageLabel) {
   const match = String(stageCompleted || '').match(new RegExp(`${stageLabel}複習第(\\d+)次完成`));
   return match ? Number(match[1]) || 0 : 0;
@@ -248,24 +212,19 @@ function getSummaryRecord(playerName, dharmaName, phoneLast4) {
   }
 
   const rows = values.slice(1);
+  const headers = values[0];
+  const summaryIndexes = mapSummaryIndexes(headers);
   const summaryKey = buildSummaryKey(playerName, dharmaName, phoneLast4);
-  const found = rows.find((row) => buildSummaryKey(row[0], row[1], row[2]) === summaryKey);
+  const found = rows.find((row) => buildSummaryKey(
+    row[summaryIndexes.playerName],
+    row[summaryIndexes.dharmaName],
+    row[summaryIndexes.phoneLast4]
+  ) === summaryKey);
   if (!found) {
     return null;
   }
 
-  return {
-    playerName: found[0],
-    dharmaName: found[1],
-    phoneLast4: found[2],
-    firstStageStatus: found[3],
-    firstStageScore: found[4],
-    firstStageReviewCount: found[5],
-    secondStageStatus: found[6],
-    secondStageReviewCount: found[7],
-    lastStageCompleted: found[8],
-    lastUpdated: found[9]
-  };
+  return summaryRowToRecord(found, summaryIndexes);
 }
 
 function getOrCreateSummarySheet(spreadsheet) {
@@ -293,38 +252,30 @@ function writeSummarySheet(summarySheet, records) {
     .sort((left, right) => {
       return normalizeText(left.playerName).localeCompare(normalizeText(right.playerName), 'zh-Hant');
     })
-    .map((record) => {
-      return [
-        record.playerName,
-        record.dharmaName,
-        record.phoneLast4,
-        record.firstStageStatus,
-        record.firstStageScore,
-        record.firstStageReviewCount,
-        record.secondStageStatus,
-        record.secondStageReviewCount,
-        record.lastStageCompleted,
-        record.lastUpdated
-      ];
-    });
+    .map((record) => summaryRecordToRow(record));
 
   summarySheet.getRange(2, 1, rows.length, SUMMARY_HEADERS.length).setValues(rows);
   summarySheet.autoResizeColumns(1, SUMMARY_HEADERS.length);
 }
 
 function createSummaryRecord(row) {
-  return {
+  const record = {
     playerName: normalizeText(row.playerName),
     dharmaName: normalizeText(row.dharmaName),
     phoneLast4: normalizePhoneLast4(row.phoneLast4),
-    firstStageStatus: '',
-    firstStageScore: 0,
-    firstStageReviewCount: 0,
-    secondStageStatus: '',
-    secondStageReviewCount: 0,
     lastStageCompleted: '',
     lastUpdated: ''
   };
+
+  STAGE_DEFINITIONS.forEach((stage) => {
+    record[`${stage.id}Status`] = '';
+    if (stage.scoreKey) {
+      record[`${stage.id}Score`] = 0;
+    }
+    record[`${stage.id}ReviewCount`] = 0;
+  });
+
+  return record;
 }
 
 function applyProgressRowToSummary(summary, row) {
@@ -333,27 +284,25 @@ function applyProgressRowToSummary(summary, row) {
   const stageId = normalizeText(row.stageId);
   const monopolyScore = Number(row.monopolyScore || 0);
 
-  if (eventType === 'monopoly_pass' || stageCompleted === '第一關完成') {
-    summary.firstStageStatus = 'Pass';
-    summary.firstStageScore = Math.max(Number(summary.firstStageScore || 0), monopolyScore || 75);
-  }
+  STAGE_DEFINITIONS.forEach((stage) => {
+    const completedByEvent = isStageCompletedByEvent(stage, eventType, stageId);
+    const completedByText = stageCompleted === `${stage.label}完成`;
+    const reviewCount = extractReviewCount(stageCompleted, stage.label);
+    const reviewedByEvent = isStageReviewedByEvent(stage, eventType, stageId);
 
-  const firstStageReviewCount = extractReviewCount(stageCompleted, '第一關');
-  if (eventType === 'monopoly_review' || firstStageReviewCount > 0) {
-    summary.firstStageStatus = 'Pass';
-    summary.firstStageReviewCount = Math.max(Number(summary.firstStageReviewCount || 0), firstStageReviewCount || 1);
-    summary.firstStageScore = Math.max(Number(summary.firstStageScore || 0), monopolyScore || 75);
-  }
+    if (completedByEvent || completedByText) {
+      summary[`${stage.id}Status`] = stage.passValue;
+    }
 
-  if (eventType === 'stage_pass' && stageId === 'reception-duty' || stageCompleted === '第二關完成') {
-    summary.secondStageStatus = 'Completed';
-  }
+    if (reviewedByEvent || reviewCount > 0) {
+      summary[`${stage.id}Status`] = stage.passValue;
+      summary[`${stage.id}ReviewCount`] = Math.max(Number(summary[`${stage.id}ReviewCount`] || 0), reviewCount || 1);
+    }
 
-  const secondStageReviewCount = extractReviewCount(stageCompleted, '第二關');
-  if (eventType === 'stage_review' && stageId === 'reception-duty' || secondStageReviewCount > 0) {
-    summary.secondStageStatus = 'Completed';
-    summary.secondStageReviewCount = Math.max(Number(summary.secondStageReviewCount || 0), secondStageReviewCount || 1);
-  }
+    if (stage.scoreKey && (completedByEvent || completedByText || reviewedByEvent || reviewCount > 0)) {
+      summary[`${stage.id}Score`] = Math.max(Number(summary[`${stage.id}Score`] || 0), monopolyScore || 75);
+    }
+  });
 
   if (stageCompleted) {
     summary.lastStageCompleted = stageCompleted;
@@ -370,4 +319,100 @@ function buildSummaryKey(playerName, dharmaName, phoneLast4) {
     normalizeText(dharmaName),
     normalizePhoneLast4(phoneLast4)
   ].join('::');
+}
+
+function buildProgressFromSummary(summaryRecord) {
+  const progress = {};
+
+  STAGE_DEFINITIONS.forEach((stage) => {
+    if (summaryRecord[`${stage.id}Status`]) {
+      progress[stage.id] = summaryRecord[`${stage.id}Status`];
+    }
+
+    const reviewCount = Number(summaryRecord[`${stage.id}ReviewCount`] || 0);
+    if (reviewCount > 0) {
+      progress[`${stage.id}ReviewCount`] = reviewCount;
+    }
+
+    if (stage.scoreKey) {
+      const score = Number(summaryRecord[`${stage.id}Score`] || 0);
+      if (score > 0) {
+        progress[stage.scoreKey] = score;
+      }
+    }
+  });
+
+  return progress;
+}
+
+function mapSummaryIndexes(headers) {
+  const indexes = {
+    playerName: headers.indexOf('姓名'),
+    dharmaName: headers.indexOf('法名(沒有不必填寫)'),
+    phoneLast4: headers.indexOf('手機末四碼'),
+    lastStageCompleted: headers.indexOf('最後完成進度'),
+    lastUpdated: headers.indexOf('最後更新時間')
+  };
+
+  STAGE_DEFINITIONS.forEach((stage) => {
+    indexes[`${stage.id}Status`] = headers.indexOf(`${stage.label}狀態`);
+    indexes[`${stage.id}ReviewCount`] = headers.indexOf(`${stage.label}複習次數`);
+    if (stage.scoreKey) {
+      indexes[`${stage.id}Score`] = headers.indexOf(`${stage.label}分數`);
+    }
+  });
+
+  return indexes;
+}
+
+function summaryRowToRecord(row, indexes) {
+  const record = {
+    playerName: row[indexes.playerName],
+    dharmaName: row[indexes.dharmaName],
+    phoneLast4: row[indexes.phoneLast4],
+    lastStageCompleted: row[indexes.lastStageCompleted],
+    lastUpdated: row[indexes.lastUpdated]
+  };
+
+  STAGE_DEFINITIONS.forEach((stage) => {
+    record[`${stage.id}Status`] = indexes[`${stage.id}Status`] >= 0 ? row[indexes[`${stage.id}Status`]] : '';
+    record[`${stage.id}ReviewCount`] = indexes[`${stage.id}ReviewCount`] >= 0 ? row[indexes[`${stage.id}ReviewCount`]] : 0;
+    if (stage.scoreKey) {
+      record[`${stage.id}Score`] = indexes[`${stage.id}Score`] >= 0 ? row[indexes[`${stage.id}Score`]] : 0;
+    }
+  });
+
+  return record;
+}
+
+function summaryRecordToRow(record) {
+  return [
+    record.playerName,
+    record.dharmaName,
+    record.phoneLast4,
+    ...STAGE_DEFINITIONS.flatMap((stage) => {
+      const values = [record[`${stage.id}Status`] || ''];
+      if (stage.scoreKey) {
+        values.push(Number(record[`${stage.id}Score`] || 0));
+      }
+      values.push(Number(record[`${stage.id}ReviewCount`] || 0));
+      return values;
+    }),
+    record.lastStageCompleted,
+    record.lastUpdated
+  ];
+}
+
+function isStageCompletedByEvent(stage, eventType, stageId) {
+  if (stage.id === 'DressCode') {
+    return eventType === 'monopoly_pass' && stageId === stage.id;
+  }
+  return eventType === 'stage_pass' && stageId === stage.id;
+}
+
+function isStageReviewedByEvent(stage, eventType, stageId) {
+  if (stage.id === 'DressCode') {
+    return eventType === 'monopoly_review' && stageId === stage.id;
+  }
+  return eventType === 'stage_review' && stageId === stage.id;
 }

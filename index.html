@@ -130,10 +130,17 @@
     </div>
 
     <script>
-        const APP_VERSION = "2026-07-05-r6";
+        const APP_VERSION = "2026-07-05-r7";
         const ACTIVE_PLAYER_PROFILE_KEY = 'ActivePlayerProfile';
         const PLAYER_PROGRESS_PREFIX = 'PlayerProgress::';
         const PROGRESS_SYNC_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbypmnLCc6OMY3IQPX28ze_wTI688beDZ5g7bTbFOhofLzVDUdGcdYZllxcmr0PpESdQRw/exec"; // 例如: https://script.google.com/macros/s/DEPLOYMENT_ID/exec
+        const MONOPOLY_STAGE = {
+            id: 'DressCode',
+            summaryLabel: '第一關',
+            title: '第一關：服儀大富翁',
+            passValue: 'Pass',
+            scoreKey: 'MonopolyScore'
+        };
 
         let ALL_STAGES = [];
         let monopolyEvents = {};
@@ -177,6 +184,43 @@
 
         function normalizePlayerIdentity(playerName, dharmaName = '', phoneLast4 = '') {
             return `${(playerName || '').trim()}::${(dharmaName || '').trim()}::${normalizePhoneLast4(phoneLast4)}`;
+        }
+
+        function extractStageLabel(title = '') {
+            const match = String(title || '').match(/^(第[^：:]+關)/);
+            return match ? match[1] : '';
+        }
+
+        function getAllStageDefinitions() {
+            return [
+                MONOPOLY_STAGE,
+                ...ALL_STAGES.map((stage) => ({
+                    id: stage.id,
+                    summaryLabel: stage.summaryLabel || extractStageLabel(stage.title) || stage.id,
+                    title: stage.title,
+                    requiresStageId: stage.requiresStageId || MONOPOLY_STAGE.id,
+                    passValue: 'Completed'
+                }))
+            ];
+        }
+
+        function getStageDefinition(stageId) {
+            return getAllStageDefinitions().find((stage) => stage.id === stageId) || null;
+        }
+
+        function getReviewCountKey(stageId) {
+            return `${stageId}ReviewCount`;
+        }
+
+        function getStageScoreKey(stageId) {
+            const stage = getStageDefinition(stageId);
+            return stage && stage.scoreKey ? stage.scoreKey : '';
+        }
+
+        function isStagePassed(stageId) {
+            const stage = getStageDefinition(stageId);
+            if (!stage) return false;
+            return getPlayerProgressValue(stageId) === stage.passValue;
         }
 
         function getPlayerProfile() {
@@ -299,27 +343,23 @@
         function normalizeProgressState(progressState = {}) {
             const normalized = {};
 
-            if (progressState.DressCode === 'Pass') {
-                normalized.DressCode = 'Pass';
-            }
+            Object.entries(progressState || {}).forEach(([key, value]) => {
+                if (value == null || value === '') return;
 
-            const monopolyScore = Number(progressState.MonopolyScore || 0);
-            if (monopolyScore > 0) {
-                normalized.MonopolyScore = monopolyScore;
-            }
+                if (key.endsWith('ReviewCount') || key.endsWith('Score')) {
+                    const numericValue = Number(value || 0);
+                    if (numericValue > 0) {
+                        normalized[key] = numericValue;
+                    }
+                    return;
+                }
 
-            const dressCodeReviewCount = Number(progressState.DressCodeReviewCount || 0);
-            if (dressCodeReviewCount > 0) {
-                normalized.DressCodeReviewCount = dressCodeReviewCount;
-            }
+                normalized[key] = value;
+            });
 
-            if (progressState['reception-duty'] === 'Completed') {
-                normalized['reception-duty'] = 'Completed';
-            }
-
-            const receptionDutyReviewCount = Number(progressState['reception-dutyReviewCount'] || 0);
-            if (receptionDutyReviewCount > 0) {
-                normalized['reception-dutyReviewCount'] = receptionDutyReviewCount;
+            const monopolyScoreKey = getStageScoreKey(MONOPOLY_STAGE.id);
+            if (normalized[MONOPOLY_STAGE.id] === MONOPOLY_STAGE.passValue && !normalized[monopolyScoreKey]) {
+                normalized[monopolyScoreKey] = 75;
             }
 
             return normalized;
@@ -328,29 +368,21 @@
         function mergeProgressStates(localState = {}, remoteState = {}) {
             const merged = { ...localState };
 
-            if (remoteState.DressCode === 'Pass' || localState.DressCode === 'Pass') {
-                merged.DressCode = 'Pass';
+            Object.entries(remoteState || {}).forEach(([key, value]) => {
+                if (key.endsWith('ReviewCount') || key.endsWith('Score')) {
+                    merged[key] = Math.max(Number(localState[key] || 0), Number(value || 0));
+                    return;
+                }
+
+                if (value) {
+                    merged[key] = localState[key] || value;
+                }
+            });
+
+            const monopolyScoreKey = getStageScoreKey(MONOPOLY_STAGE.id);
+            if (merged[MONOPOLY_STAGE.id] === MONOPOLY_STAGE.passValue) {
+                merged[monopolyScoreKey] = Math.max(Number(merged[monopolyScoreKey] || 0), 75);
             }
-
-            merged.MonopolyScore = Math.max(
-                Number(localState.MonopolyScore || 0),
-                Number(remoteState.MonopolyScore || 0),
-                merged.DressCode === 'Pass' ? 75 : 0
-            );
-
-            merged.DressCodeReviewCount = Math.max(
-                Number(localState.DressCodeReviewCount || 0),
-                Number(remoteState.DressCodeReviewCount || 0)
-            );
-
-            if (remoteState['reception-duty'] === 'Completed' || localState['reception-duty'] === 'Completed') {
-                merged['reception-duty'] = 'Completed';
-            }
-
-            merged['reception-dutyReviewCount'] = Math.max(
-                Number(localState['reception-dutyReviewCount'] || 0),
-                Number(remoteState['reception-dutyReviewCount'] || 0)
-            );
 
             return merged;
         }
@@ -512,13 +544,8 @@
         }
 
         function getStageLabel(stageId) {
-            if (stageId === 'DressCode') {
-                return '第一關';
-            }
-            if (stageId === 'reception-duty') {
-                return '第二關';
-            }
-            return stageId;
+            const stage = getStageDefinition(stageId);
+            return stage ? stage.summaryLabel : stageId;
         }
 
         function getProgressLabel(stageId, mode = 'pass', count = 0) {
@@ -527,10 +554,6 @@
                 return `${stageLabel}複習第${count}次完成`;
             }
             return `${stageLabel}完成`;
-        }
-
-        function getReviewCountKey(stageId) {
-            return `${stageId}ReviewCount`;
         }
 
         function submitProgressToGoogleForm(payload) {
@@ -601,9 +624,9 @@
         function renderStageList() {
             const zone = document.getElementById('stage-list-zone');
             zone.innerHTML = '';
-            const isMonopolyPassed = getPlayerProgressValue('DressCode') === 'Pass';
-            const monopolySavedScore = getPlayerProgressNumber('MonopolyScore');
-            const monopolyReviewCount = getPlayerProgressNumber(getReviewCountKey('DressCode'));
+            const isMonopolyPassed = isStagePassed(MONOPOLY_STAGE.id);
+            const monopolySavedScore = getPlayerProgressNumber(MONOPOLY_STAGE.scoreKey);
+            const monopolyReviewCount = getPlayerProgressNumber(getReviewCountKey(MONOPOLY_STAGE.id));
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
@@ -633,11 +656,12 @@
 
             // 2. 第二關：13項值班挑戰
             ALL_STAGES.forEach(stage => {
-                const isPassed = getPlayerProgressValue(stage.id) === 'Completed';
+                const isPassed = isStagePassed(stage.id);
                 const reviewCount = getPlayerProgressNumber(getReviewCountKey(stage.id));
                 const openDate = stage.openDate ? new Date(`${stage.openDate}T00:00:00`) : null;
                 const isDateOpen = !openDate || today >= openDate;
-                const isUnlocked = isMonopolyPassed && isDateOpen;
+                const prerequisiteStageId = stage.requiresStageId || MONOPOLY_STAGE.id;
+                const isUnlocked = isStagePassed(prerequisiteStageId) && isDateOpen;
                 const card = document.createElement('div');
                 card.className = `p-3.5 sm:p-4 rounded-2xl border transition-all flex items-center justify-between ${
                     isPassed ? 'bg-emerald-50 border-emerald-300 cursor-pointer hover:bg-emerald-50' :
@@ -647,7 +671,7 @@
                 if (isUnlocked || isPassed) { card.onclick = () => startStoryStage(stage.id); }
 
                 let statusBadge = `<span class="text-xs font-bold text-rose-400">🔒 需先通過服儀關</span>`;
-                if (isMonopolyPassed && !isDateOpen) { statusBadge = `<span class="text-xs font-bold text-amber-500">⏳ ${stage.openDate} 開放</span>`; }
+                if (isStagePassed(prerequisiteStageId) && !isDateOpen) { statusBadge = `<span class="text-xs font-bold text-amber-500">⏳ ${stage.openDate} 開放</span>`; }
                 else if (isUnlocked && !isPassed) { statusBadge = `<span class="text-xs font-bold text-indigo-600 animate-pulse">⚔️ 開始值班挑戰</span>`; } 
                 else if (isPassed) { statusBadge = `<span class="text-xs font-bold text-emerald-600">✅ 考核完成${reviewCount ? ` / 複習 ${reviewCount} 次` : ' (可複習)'}</span>`; }
 
@@ -658,7 +682,7 @@
 
         function openMonopolyModal() { 
             isReviewMode = false;
-            if (getPlayerProgressValue('DressCode') === 'Pass') {
+            if (isStagePassed(MONOPOLY_STAGE.id)) {
                 isMonopolyReviewMode = true;
                 document.getElementById('monopoly-title-ui').innerText = "🔄 服儀大富翁 (複習模式)";
                 document.getElementById('score-label-ui').innerText = "本次複習專業度";
@@ -680,24 +704,24 @@
         function completeMonopolyRun() {
             if (!isMonopolyReviewMode) {
                 document.getElementById('game-msg').innerHTML = `🎉 <span class='text-emerald-600 font-bold'>考核通過！</span> 本次得分 ${score} 分，第一關直接過關，第二關已解鎖。`;
-                setPlayerProgressValue('DressCode', 'Pass');
-                setPlayerProgressValue('MonopolyScore', score);
+                setPlayerProgressValue(MONOPOLY_STAGE.id, MONOPOLY_STAGE.passValue);
+                setPlayerProgressValue(MONOPOLY_STAGE.scoreKey, score);
                 submitProgressToGoogleForm({
                     eventType: 'monopoly_pass',
                     monopolyScore: score,
                     monopolyPassed: 'Pass',
-                    stageId: 'DressCode',
-                    stageCompleted: getProgressLabel('DressCode', 'pass')
+                    stageId: MONOPOLY_STAGE.id,
+                    stageCompleted: getProgressLabel(MONOPOLY_STAGE.id, 'pass')
                 });
             } else {
-                const reviewCount = incrementPlayerProgressCount(getReviewCountKey('DressCode'));
+                const reviewCount = incrementPlayerProgressCount(getReviewCountKey(MONOPOLY_STAGE.id));
                 document.getElementById('game-msg').innerHTML = `🎉 <span class='text-blue-600 font-bold'>複習完成！</span> 本次複習得分 ${score} 分 (不影響原本進度)。`;
                 submitProgressToGoogleForm({
                     eventType: 'monopoly_review',
                     monopolyScore: score,
                     monopolyPassed: 'Pass',
-                    stageId: 'DressCode',
-                    stageCompleted: getProgressLabel('DressCode', 'review', reviewCount)
+                    stageId: MONOPOLY_STAGE.id,
+                    stageCompleted: getProgressLabel(MONOPOLY_STAGE.id, 'review', reviewCount)
                 });
             }
 
@@ -813,8 +837,8 @@
                                 setPlayerProgressValue(currentStoryStageId, 'Completed');
                                 submitProgressToGoogleForm({
                                     eventType: 'stage_pass',
-                                    monopolyScore: getPlayerProgressNumber('MonopolyScore'),
-                                    monopolyPassed: getPlayerProgressValue('DressCode') === 'Pass' ? 'Pass' : 'NotPass',
+                                    monopolyScore: getPlayerProgressNumber(MONOPOLY_STAGE.scoreKey),
+                                    monopolyPassed: isStagePassed(MONOPOLY_STAGE.id) ? 'Pass' : 'NotPass',
                                     stageId: currentStoryStageId,
                                     stageCompleted: getProgressLabel(currentStoryStageId, 'pass')
                                 });
@@ -824,8 +848,8 @@
                                 const reviewCount = incrementPlayerProgressCount(getReviewCountKey(currentStoryStageId));
                                 submitProgressToGoogleForm({
                                     eventType: 'stage_review',
-                                    monopolyScore: getPlayerProgressNumber('MonopolyScore'),
-                                    monopolyPassed: getPlayerProgressValue('DressCode') === 'Pass' ? 'Pass' : 'NotPass',
+                                    monopolyScore: getPlayerProgressNumber(MONOPOLY_STAGE.scoreKey),
+                                    monopolyPassed: isStagePassed(MONOPOLY_STAGE.id) ? 'Pass' : 'NotPass',
                                     stageId: currentStoryStageId,
                                     stageCompleted: getProgressLabel(currentStoryStageId, 'review', reviewCount)
                                 });
