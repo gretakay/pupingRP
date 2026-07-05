@@ -138,7 +138,7 @@
             monopolyScore: "",   // entry.xxxxx
             monopolyPassed: "",  // entry.xxxxx
             stageId: "",         // entry.xxxxx
-            stageCompleted: "",  // entry.xxxxx
+            stageCompleted: "entry.869276926",  // entry.xxxxx（完成進度）
             appVersion: "",      // entry.xxxxx
             eventType: "",       // entry.xxxxx
             eventTime: ""        // entry.xxxxx
@@ -377,7 +377,7 @@
                             monopolyScore: score,
                             monopolyPassed: 'Pass',
                             stageId: 'DressCode',
-                            stageCompleted: 'Completed'
+                            stageCompleted: '第一關完成'
                         });
                     } else {
                         document.getElementById('game-msg').innerHTML = `🎉 <span class='text-blue-600 font-bold'>複習完成！</span> 回到起點完成本次複習，得分: ${score} 分 (不影響原本進度)。`;
@@ -386,7 +386,7 @@
                             monopolyScore: score,
                             monopolyPassed: 'Pass',
                             stageId: 'DressCode',
-                            stageCompleted: 'Review'
+                            stageCompleted: '第一關複習完成'
                         });
                     }
                     setTimeout(() => { closeMonopolyModal(); renderStageList(); }, 2500);
@@ -479,7 +479,7 @@
                                     monopolyScore: Number(localStorage.getItem('MonopolyScore') || 0),
                                     monopolyPassed: localStorage.getItem('DressCode') === 'Pass' ? 'Pass' : 'NotPass',
                                     stageId: currentStoryStageId,
-                                    stageCompleted: 'Completed'
+                                    stageCompleted: '第二關完成'
                                 });
                                 alert("🎉 恭喜圓滿通過一日值班實戰考核！");
                             } 
