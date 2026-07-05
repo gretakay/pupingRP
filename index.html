@@ -19,6 +19,29 @@
         @media (min-width: 400px) { .grid-board { gap: 12px; } }
         .btn-glow { box-shadow: 0 8px 20px -4px rgba(244, 63, 94, 0.3); }
         .btn-glow-blue { box-shadow: 0 8px 20px -4px rgba(59, 130, 246, 0.3); }
+
+        /* 可讀性提升：主要介面文字放大 */
+        #stage-list-zone h3 { font-size: 1.08rem; }
+        #stage-list-zone p { font-size: 0.9rem; }
+        #stage-list-zone span { font-size: 0.9rem; }
+        #monopoly-title-ui { font-size: 1.35rem; }
+        #score-label-ui { font-size: 0.95rem; }
+        #score-display { font-size: 1.35rem; }
+        #monopoly-modal .grid-board > div { font-size: 0.82rem; line-height: 1.2; }
+        #dice-btn { font-size: 1rem; }
+        #game-msg { font-size: 0.95rem; min-height: 48px; }
+        #modal-tag { font-size: 0.9rem; }
+        #modal-text { font-size: 1.08rem; }
+        #modal-options button { font-size: 0.96rem; }
+
+        @media (min-width: 640px) {
+            #stage-list-zone h3 { font-size: 1.18rem; }
+            #stage-list-zone p { font-size: 0.98rem; }
+            #stage-list-zone span { font-size: 0.95rem; }
+            #monopoly-modal .grid-board > div { font-size: 0.9rem; }
+            #game-msg { font-size: 1rem; }
+            #modal-text { font-size: 1.15rem; }
+        }
     </style>
 </head>
 <body class="bg-indigo-50/60 font-sans min-h-screen flex flex-col items-center justify-start p-3 sm:p-6 md:p-8 selection:bg-indigo-200">
@@ -78,6 +101,22 @@
         </div>
     </div>
 
+    <div id="profile-modal" class="hidden fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+        <div class="bg-white rounded-[2rem] max-w-lg w-full shadow-2xl border border-indigo-100 p-6 sm:p-7">
+            <h2 class="text-2xl sm:text-3xl font-black text-slate-800">📝 請先填寫資料</h2>
+            <p class="text-base sm:text-lg text-slate-500 mt-2 mb-5">姓名為必填，法名可略過。</p>
+
+            <label for="profile-name-input" class="block text-lg font-bold text-slate-700 mb-2">姓名（必填）</label>
+            <input id="profile-name-input" type="text" class="w-full border-2 border-indigo-200 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" placeholder="請輸入姓名">
+            <p id="profile-name-error" class="hidden text-rose-600 text-sm mt-2 font-bold">請先輸入姓名再開始。</p>
+
+            <label for="profile-dharma-input" class="block text-lg font-bold text-slate-700 mt-5 mb-2">法名（選填）</label>
+            <input id="profile-dharma-input" type="text" class="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="沒有可留空">
+
+            <button onclick="savePlayerProfile()" class="w-full mt-6 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black py-3.5 rounded-xl text-lg transition transform active:scale-95">開始闖關</button>
+        </div>
+    </div>
+
     <script>
         const APP_VERSION = "2026-07-02-r4";
 
@@ -89,6 +128,7 @@
         let currentStoryNode = "start";
         let isReviewMode = false; 
         let isMonopolyReviewMode = false; 
+        let profileResolver = null;
 
         // Google Form 串接設定：請替換成你自己的表單資訊
         const GOOGLE_FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLSd3gR5HOeze0O5kqfncGMGJALhuJLwkImIZ57hpogD3vJNfsw/formResponse"; // 例如: https://docs.google.com/forms/d/e/FORM_ID/formResponse
@@ -112,36 +152,71 @@
         }
 
         function getPlayerProfile() {
-            let playerName = localStorage.getItem('PlayerName');
-            let dharmaName = localStorage.getItem('DharmaName');
-
-            if (!playerName || !playerName.trim()) {
-                while (!playerName || !playerName.trim()) {
-                    const inputName = prompt('請輸入姓名（必填，用於紀錄闖關成績）') || '';
-                    playerName = inputName.trim();
-                    if (!playerName) {
-                        alert('姓名為必填，請輸入後再繼續。');
-                    }
-                }
-                localStorage.setItem('PlayerName', playerName);
-            }
-
-            if (!dharmaName) {
-                const inputDharmaName = prompt('請輸入法名（選填，可略過）') || '';
-                dharmaName = inputDharmaName.trim();
-                if (dharmaName) localStorage.setItem('DharmaName', dharmaName);
-            }
-
+            const playerName = (localStorage.getItem('PlayerName') || '').trim();
+            const dharmaName = (localStorage.getItem('DharmaName') || '').trim();
             return {
                 playerName,
                 dharmaName: dharmaName || ''
             };
         }
 
+        function openProfileModal() {
+            const nameInput = document.getElementById('profile-name-input');
+            const dharmaInput = document.getElementById('profile-dharma-input');
+            const nameError = document.getElementById('profile-name-error');
+            const saved = getPlayerProfile();
+
+            nameInput.value = saved.playerName;
+            dharmaInput.value = saved.dharmaName;
+            nameError.classList.add('hidden');
+            document.getElementById('profile-modal').classList.remove('hidden');
+            setTimeout(() => nameInput.focus(), 30);
+        }
+
+        function savePlayerProfile() {
+            const nameInput = document.getElementById('profile-name-input');
+            const dharmaInput = document.getElementById('profile-dharma-input');
+            const nameError = document.getElementById('profile-name-error');
+            const playerName = nameInput.value.trim();
+            const dharmaName = dharmaInput.value.trim();
+
+            if (!playerName) {
+                nameError.classList.remove('hidden');
+                nameInput.focus();
+                return;
+            }
+
+            localStorage.setItem('PlayerName', playerName);
+            if (dharmaName) {
+                localStorage.setItem('DharmaName', dharmaName);
+            } else {
+                localStorage.removeItem('DharmaName');
+            }
+
+            document.getElementById('profile-modal').classList.add('hidden');
+            if (profileResolver) {
+                profileResolver(getPlayerProfile());
+                profileResolver = null;
+            }
+        }
+
+        function ensurePlayerProfile() {
+            const profile = getPlayerProfile();
+            if (profile.playerName) {
+                return Promise.resolve(profile);
+            }
+
+            openProfileModal();
+            return new Promise((resolve) => {
+                profileResolver = resolve;
+            });
+        }
+
         function submitProgressToGoogleForm(payload) {
             if (!isGoogleFormConfigured()) return;
 
             const { playerName, dharmaName } = getPlayerProfile();
+            if (!playerName) return;
             const formData = new FormData();
 
             // 只填已設定的欄位，避免欄位未建立時造成送出失敗
@@ -175,7 +250,7 @@
         async function loadGameData() {
             try {
                 document.getElementById('app-version').innerText = `版本: ${APP_VERSION}`;
-                getPlayerProfile();
+                await ensurePlayerProfile();
 
                 const fetchOptions = {
                     cache: 'no-store',
