@@ -50,6 +50,14 @@
         <h2 class="text-xl sm:text-2xl font-black text-slate-800 mb-1 flex items-center gap-2">🗺️ pupingRP 修煉地圖</h2>
         <p class="text-xs text-slate-400 mb-5 sm:mb-6">完成首關服儀特訓，解鎖專業護班值班實戰挑戰。</p>
         <p id="app-version" class="text-[10px] text-slate-300 -mt-4 mb-4">版本: 載入中...</p>
+        <div class="mb-5 sm:mb-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+                <p class="text-[11px] font-bold text-slate-400">目前闖關者</p>
+                <p id="player-display" class="text-sm sm:text-base font-black text-slate-700 truncate">載入中...</p>
+                <p id="sync-status" class="mt-1 text-[11px] font-bold text-slate-400">本機模式</p>
+            </div>
+            <button onclick="switchPlayerProfile()" class="shrink-0 rounded-xl bg-slate-800 px-3 py-2 text-xs font-black text-white transition hover:bg-slate-700 active:scale-95">切換人員</button>
+        </div>
         
         <div id="stage-list-zone" class="space-y-3 sm:space-y-4"></div>
     </div>
@@ -104,7 +112,7 @@
     <div id="profile-modal" class="hidden fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
         <div class="bg-white rounded-[2rem] max-w-lg w-full shadow-2xl border border-indigo-100 p-6 sm:p-7">
             <h2 class="text-2xl sm:text-3xl font-black text-slate-800">📝 請先填寫資料</h2>
-            <p class="text-base sm:text-lg text-slate-500 mt-2 mb-5">姓名為必填，法名可略過。</p>
+            <p class="text-base sm:text-lg text-slate-500 mt-2 mb-5">姓名、手機末4碼為必填，法名可略過。</p>
 
             <label for="profile-name-input" class="block text-lg font-bold text-slate-700 mb-2">姓名（必填）</label>
             <input id="profile-name-input" type="text" class="w-full border-2 border-indigo-200 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" placeholder="請輸入姓名">
@@ -113,12 +121,19 @@
             <label for="profile-dharma-input" class="block text-lg font-bold text-slate-700 mt-5 mb-2">法名（選填）</label>
             <input id="profile-dharma-input" type="text" class="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="沒有可留空">
 
+            <label for="profile-phone-last4-input" class="block text-lg font-bold text-slate-700 mt-5 mb-2">手機末4碼（必填）</label>
+            <input id="profile-phone-last4-input" type="text" inputmode="numeric" maxlength="4" class="w-full border-2 border-indigo-200 rounded-xl px-4 py-3 text-lg tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-indigo-300" placeholder="例如 1234">
+            <p id="profile-phone-last4-error" class="hidden text-rose-600 text-sm mt-2 font-bold">請輸入4位數手機末4碼。</p>
+
             <button onclick="savePlayerProfile()" class="w-full mt-6 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black py-3.5 rounded-xl text-lg transition transform active:scale-95">開始闖關</button>
         </div>
     </div>
 
     <script>
-        const APP_VERSION = "2026-07-02-r4";
+        const APP_VERSION = "2026-07-05-r6";
+        const ACTIVE_PLAYER_PROFILE_KEY = 'ActivePlayerProfile';
+        const PLAYER_PROGRESS_PREFIX = 'PlayerProgress::';
+        const PROGRESS_SYNC_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbypmnLCc6OMY3IQPX28ze_wTI688beDZ5g7bTbFOhofLzVDUdGcdYZllxcmr0PpESdQRw/exec"; // 例如: https://script.google.com/macros/s/DEPLOYMENT_ID/exec
 
         let ALL_STAGES = [];
         let monopolyEvents = {};
@@ -135,6 +150,7 @@
         const GOOGLE_FORM_ENTRIES = {
             playerName: "entry.1160088",      // entry.xxxxx
             dharmaName: "entry.36714066",     // entry.xxxxx
+            phoneLast4: "entry.2083268004",      // entry.xxxxx
             monopolyScore: "",   // entry.xxxxx
             monopolyPassed: "",  // entry.xxxxx
             stageId: "",         // entry.xxxxx
@@ -151,34 +167,303 @@
             );
         }
 
+        function isCloudSyncConfigured() {
+            return Boolean(PROGRESS_SYNC_WEB_APP_URL);
+        }
+
+        function normalizePhoneLast4(phoneLast4 = '') {
+            return String(phoneLast4 || '').replace(/\D/g, '').slice(0, 4);
+        }
+
+        function normalizePlayerIdentity(playerName, dharmaName = '', phoneLast4 = '') {
+            return `${(playerName || '').trim()}::${(dharmaName || '').trim()}::${normalizePhoneLast4(phoneLast4)}`;
+        }
+
         function getPlayerProfile() {
-            const playerName = (localStorage.getItem('PlayerName') || '').trim();
-            const dharmaName = (localStorage.getItem('DharmaName') || '').trim();
+            const savedProfile = localStorage.getItem(ACTIVE_PLAYER_PROFILE_KEY);
+            let parsedProfile = null;
+
+            if (savedProfile) {
+                try {
+                    parsedProfile = JSON.parse(savedProfile);
+                } catch (error) {
+                    console.warn('玩家資料解析失敗，將改用舊版欄位。', error);
+                }
+            }
+
+            const fallbackName = (localStorage.getItem('PlayerName') || '').trim();
+            const fallbackDharma = (localStorage.getItem('DharmaName') || '').trim();
+            const fallbackPhoneLast4 = normalizePhoneLast4(localStorage.getItem('PhoneLast4') || '');
+            const playerName = ((parsedProfile && parsedProfile.playerName) || fallbackName || '').trim();
+            const dharmaName = ((parsedProfile && parsedProfile.dharmaName) || fallbackDharma || '').trim();
+            const phoneLast4 = normalizePhoneLast4((parsedProfile && parsedProfile.phoneLast4) || fallbackPhoneLast4 || '');
+
             return {
                 playerName,
-                dharmaName: dharmaName || ''
+                dharmaName: dharmaName || '',
+                phoneLast4
             };
         }
 
-        function openProfileModal() {
+        function setPlayerProfile(playerName, dharmaName, phoneLast4) {
+            const profile = {
+                playerName: playerName.trim(),
+                dharmaName: dharmaName.trim(),
+                phoneLast4: normalizePhoneLast4(phoneLast4)
+            };
+            localStorage.setItem(ACTIVE_PLAYER_PROFILE_KEY, JSON.stringify(profile));
+            localStorage.setItem('PlayerName', profile.playerName);
+            if (profile.dharmaName) {
+                localStorage.setItem('DharmaName', profile.dharmaName);
+            } else {
+                localStorage.removeItem('DharmaName');
+            }
+            localStorage.setItem('PhoneLast4', profile.phoneLast4);
+            return profile;
+        }
+
+        function getPlayerProgressStorageKey(profile = getPlayerProfile()) {
+            if (!profile.playerName) return '';
+            return `${PLAYER_PROGRESS_PREFIX}${normalizePlayerIdentity(profile.playerName, profile.dharmaName, profile.phoneLast4)}`;
+        }
+
+        function getPlayerProgressState() {
+            const storageKey = getPlayerProgressStorageKey();
+            if (!storageKey) return {};
+
+            const raw = localStorage.getItem(storageKey);
+            if (!raw) return {};
+
+            try {
+                return JSON.parse(raw) || {};
+            } catch (error) {
+                console.warn('玩家進度解析失敗，將重設此玩家進度。', error);
+                return {};
+            }
+        }
+
+        function setPlayerProgressState(progressState) {
+            const storageKey = getPlayerProgressStorageKey();
+            if (!storageKey) return;
+            localStorage.setItem(storageKey, JSON.stringify(progressState));
+        }
+
+        function getPlayerProgressValue(key, fallbackValue = '') {
+            const progressState = getPlayerProgressState();
+            return progressState[key] == null ? fallbackValue : progressState[key];
+        }
+
+        function setPlayerProgressValue(key, value) {
+            const progressState = getPlayerProgressState();
+            progressState[key] = value;
+            setPlayerProgressState(progressState);
+        }
+
+        function getPlayerProgressNumber(key) {
+            return Number(getPlayerProgressValue(key, 0)) || 0;
+        }
+
+        function incrementPlayerProgressCount(key) {
+            const nextCount = getPlayerProgressNumber(key) + 1;
+            setPlayerProgressValue(key, nextCount);
+            return nextCount;
+        }
+
+        function formatPlayerDisplay(profile = getPlayerProfile()) {
+            if (!profile.playerName) return '尚未設定';
+            const segments = [profile.playerName];
+            if (profile.dharmaName) segments.push(profile.dharmaName);
+            if (profile.phoneLast4) segments.push(`末4碼 ${profile.phoneLast4}`);
+            return segments.join(' / ');
+        }
+
+        function renderPlayerSummary() {
+            document.getElementById('player-display').innerText = formatPlayerDisplay();
+        }
+
+        function setSyncStatus(message, tone = 'slate') {
+            const syncStatus = document.getElementById('sync-status');
+            if (!syncStatus) return;
+
+            const toneMap = {
+                slate: 'text-slate-400',
+                amber: 'text-amber-500',
+                emerald: 'text-emerald-600',
+                rose: 'text-rose-500'
+            };
+
+            syncStatus.className = `mt-1 text-[11px] font-bold ${toneMap[tone] || toneMap.slate}`;
+            syncStatus.innerText = message;
+        }
+
+        function normalizeProgressState(progressState = {}) {
+            const normalized = {};
+
+            if (progressState.DressCode === 'Pass') {
+                normalized.DressCode = 'Pass';
+            }
+
+            const monopolyScore = Number(progressState.MonopolyScore || 0);
+            if (monopolyScore > 0) {
+                normalized.MonopolyScore = monopolyScore;
+            }
+
+            const dressCodeReviewCount = Number(progressState.DressCodeReviewCount || 0);
+            if (dressCodeReviewCount > 0) {
+                normalized.DressCodeReviewCount = dressCodeReviewCount;
+            }
+
+            if (progressState['reception-duty'] === 'Completed') {
+                normalized['reception-duty'] = 'Completed';
+            }
+
+            const receptionDutyReviewCount = Number(progressState['reception-dutyReviewCount'] || 0);
+            if (receptionDutyReviewCount > 0) {
+                normalized['reception-dutyReviewCount'] = receptionDutyReviewCount;
+            }
+
+            return normalized;
+        }
+
+        function mergeProgressStates(localState = {}, remoteState = {}) {
+            const merged = { ...localState };
+
+            if (remoteState.DressCode === 'Pass' || localState.DressCode === 'Pass') {
+                merged.DressCode = 'Pass';
+            }
+
+            merged.MonopolyScore = Math.max(
+                Number(localState.MonopolyScore || 0),
+                Number(remoteState.MonopolyScore || 0),
+                merged.DressCode === 'Pass' ? 75 : 0
+            );
+
+            merged.DressCodeReviewCount = Math.max(
+                Number(localState.DressCodeReviewCount || 0),
+                Number(remoteState.DressCodeReviewCount || 0)
+            );
+
+            if (remoteState['reception-duty'] === 'Completed' || localState['reception-duty'] === 'Completed') {
+                merged['reception-duty'] = 'Completed';
+            }
+
+            merged['reception-dutyReviewCount'] = Math.max(
+                Number(localState['reception-dutyReviewCount'] || 0),
+                Number(remoteState['reception-dutyReviewCount'] || 0)
+            );
+
+            return merged;
+        }
+
+        function requestCloudProgress(profile) {
+            return new Promise((resolve, reject) => {
+                if (!isCloudSyncConfigured()) {
+                    resolve({ ok: false, configured: false });
+                    return;
+                }
+
+                const callbackName = `cloudProgressSync_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+                const url = new URL(PROGRESS_SYNC_WEB_APP_URL);
+                url.searchParams.set('playerName', profile.playerName);
+                url.searchParams.set('dharmaName', profile.dharmaName || '');
+                url.searchParams.set('phoneLast4', profile.phoneLast4 || '');
+                url.searchParams.set('callback', callbackName);
+                url.searchParams.set('_', Date.now().toString());
+
+                let timeoutId = null;
+                const script = document.createElement('script');
+
+                const cleanup = () => {
+                    if (timeoutId) window.clearTimeout(timeoutId);
+                    delete window[callbackName];
+                    script.remove();
+                };
+
+                window[callbackName] = (data) => {
+                    cleanup();
+                    resolve(data || { ok: false });
+                };
+
+                script.onerror = () => {
+                    cleanup();
+                    reject(new Error('雲端同步腳本載入失敗'));
+                };
+
+                timeoutId = window.setTimeout(() => {
+                    cleanup();
+                    reject(new Error('雲端同步逾時'));
+                }, 8000);
+
+                script.src = url.toString();
+                document.body.appendChild(script);
+            });
+        }
+
+        async function syncPlayerProgressFromCloud(profile = getPlayerProfile()) {
+            if (!profile.playerName || !profile.phoneLast4) {
+                setSyncStatus('請先填完姓名與手機末4碼', 'amber');
+                return;
+            }
+
+            if (!isCloudSyncConfigured()) {
+                setSyncStatus('跨手機同步未啟用，目前僅記錄本機', 'slate');
+                return;
+            }
+
+            setSyncStatus('正在同步雲端進度...', 'amber');
+
+            try {
+                const remoteResult = await requestCloudProgress(profile);
+                if (!remoteResult || remoteResult.ok === false) {
+                    setSyncStatus('雲端查詢失敗，暫用本機進度', 'rose');
+                    return;
+                }
+
+                const remoteState = normalizeProgressState(remoteResult.progress || {});
+                const mergedState = mergeProgressStates(getPlayerProgressState(), remoteState);
+                setPlayerProgressState(mergedState);
+
+                if (remoteResult.found) {
+                    setSyncStatus('已同步雲端進度', 'emerald');
+                } else {
+                    setSyncStatus('雲端查無紀錄，已建立本機新進度', 'slate');
+                }
+            } catch (error) {
+                console.warn('雲端同步失敗:', error);
+                setSyncStatus('雲端同步失敗，暫用本機進度', 'rose');
+            }
+        }
+
+        function openProfileModal(forceBlank = false) {
             const nameInput = document.getElementById('profile-name-input');
             const dharmaInput = document.getElementById('profile-dharma-input');
+            const phoneLast4Input = document.getElementById('profile-phone-last4-input');
             const nameError = document.getElementById('profile-name-error');
+            const phoneLast4Error = document.getElementById('profile-phone-last4-error');
             const saved = getPlayerProfile();
 
-            nameInput.value = saved.playerName;
-            dharmaInput.value = saved.dharmaName;
+            nameInput.value = forceBlank ? '' : saved.playerName;
+            dharmaInput.value = forceBlank ? '' : saved.dharmaName;
+            phoneLast4Input.value = forceBlank ? '' : saved.phoneLast4;
             nameError.classList.add('hidden');
+            phoneLast4Error.classList.add('hidden');
             document.getElementById('profile-modal').classList.remove('hidden');
             setTimeout(() => nameInput.focus(), 30);
         }
 
-        function savePlayerProfile() {
+        function switchPlayerProfile() {
+            openProfileModal(true);
+        }
+
+        async function savePlayerProfile() {
             const nameInput = document.getElementById('profile-name-input');
             const dharmaInput = document.getElementById('profile-dharma-input');
+            const phoneLast4Input = document.getElementById('profile-phone-last4-input');
             const nameError = document.getElementById('profile-name-error');
+            const phoneLast4Error = document.getElementById('profile-phone-last4-error');
             const playerName = nameInput.value.trim();
             const dharmaName = dharmaInput.value.trim();
+            const phoneLast4 = normalizePhoneLast4(phoneLast4Input.value);
 
             if (!playerName) {
                 nameError.classList.remove('hidden');
@@ -186,18 +471,22 @@
                 return;
             }
 
-            localStorage.setItem('PlayerName', playerName);
-            if (dharmaName) {
-                localStorage.setItem('DharmaName', dharmaName);
-            } else {
-                localStorage.removeItem('DharmaName');
+            if (phoneLast4.length !== 4) {
+                phoneLast4Error.classList.remove('hidden');
+                phoneLast4Input.focus();
+                return;
             }
+
+            setPlayerProfile(playerName, dharmaName, phoneLast4);
+            renderPlayerSummary();
+            await syncPlayerProgressFromCloud(getPlayerProfile());
+            renderStageList();
 
             // 先送一筆資料，方便現場立刻驗證回報通道是否正常
             submitProgressToGoogleForm({
                 eventType: 'profile_saved',
-                monopolyScore: Number(localStorage.getItem('MonopolyScore') || 0),
-                monopolyPassed: localStorage.getItem('DressCode') === 'Pass' ? 'Pass' : 'NotPass',
+                monopolyScore: getPlayerProgressNumber('MonopolyScore'),
+                monopolyPassed: getPlayerProgressValue('DressCode') === 'Pass' ? 'Pass' : 'NotPass',
                 stageId: 'profile',
                 stageCompleted: '資料填寫完成'
             });
@@ -212,6 +501,7 @@
         function ensurePlayerProfile() {
             const profile = getPlayerProfile();
             if (profile.playerName) {
+                renderPlayerSummary();
                 return Promise.resolve(profile);
             }
 
@@ -221,20 +511,32 @@
             });
         }
 
-        function getProgressLabel(stageId, mode = 'pass') {
+        function getStageLabel(stageId) {
             if (stageId === 'DressCode') {
-                return mode === 'review' ? '第一關複習完成' : '第一關完成';
+                return '第一關';
             }
             if (stageId === 'reception-duty') {
-                return '第二關完成';
+                return '第二關';
             }
-            return `${stageId}完成`;
+            return stageId;
+        }
+
+        function getProgressLabel(stageId, mode = 'pass', count = 0) {
+            const stageLabel = getStageLabel(stageId);
+            if (mode === 'review') {
+                return `${stageLabel}複習第${count}次完成`;
+            }
+            return `${stageLabel}完成`;
+        }
+
+        function getReviewCountKey(stageId) {
+            return `${stageId}ReviewCount`;
         }
 
         function submitProgressToGoogleForm(payload) {
             if (!isGoogleFormConfigured()) return;
 
-            const { playerName, dharmaName } = getPlayerProfile();
+            const { playerName, dharmaName, phoneLast4 } = getPlayerProfile();
             if (!playerName) return;
             const formData = new FormData();
 
@@ -245,6 +547,7 @@
 
             setIfConfigured(GOOGLE_FORM_ENTRIES.playerName, playerName);
             setIfConfigured(GOOGLE_FORM_ENTRIES.dharmaName, dharmaName);
+            setIfConfigured(GOOGLE_FORM_ENTRIES.phoneLast4, phoneLast4);
             setIfConfigured(GOOGLE_FORM_ENTRIES.monopolyScore, payload.monopolyScore);
             setIfConfigured(GOOGLE_FORM_ENTRIES.monopolyPassed, payload.monopolyPassed);
             setIfConfigured(GOOGLE_FORM_ENTRIES.stageId, payload.stageId);
@@ -269,7 +572,7 @@
         async function loadGameData() {
             try {
                 document.getElementById('app-version').innerText = `版本: ${APP_VERSION}`;
-                await ensurePlayerProfile();
+                const profile = await ensurePlayerProfile();
 
                 const fetchOptions = {
                     cache: 'no-store',
@@ -283,6 +586,8 @@
                 const monopolyResponse = await fetch(withVersion('./data/monopoly.json'), fetchOptions);
                 monopolyEvents = await monopolyResponse.json();
                 
+                await syncPlayerProgressFromCloud(profile);
+                renderPlayerSummary();
                 updatePlayerPosition();
                 renderStageList();
             } catch (error) {
@@ -296,8 +601,9 @@
         function renderStageList() {
             const zone = document.getElementById('stage-list-zone');
             zone.innerHTML = '';
-            const isMonopolyPassed = localStorage.getItem('DressCode') === 'Pass';
-            const monopolySavedScore = localStorage.getItem('MonopolyScore');
+            const isMonopolyPassed = getPlayerProgressValue('DressCode') === 'Pass';
+            const monopolySavedScore = getPlayerProgressNumber('MonopolyScore');
+            const monopolyReviewCount = getPlayerProgressNumber(getReviewCountKey('DressCode'));
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
@@ -310,7 +616,7 @@
 
             let monopolyStatusBadge = '<span class="text-xs font-bold text-indigo-600 animate-pulse">⚔️ 開始挑戰</span>';
             if (isMonopolyPassed) {
-                monopolyStatusBadge = `<span class="text-xs font-bold text-emerald-600 flex flex-col items-end"><span>✅ 考核通過</span><span class="text-[10px] font-normal text-slate-400 mt-0.5">成績: ${monopolySavedScore}分 (可複習)</span></span>`;
+                monopolyStatusBadge = `<span class="text-xs font-bold text-emerald-600 flex flex-col items-end"><span>✅ 考核通過</span><span class="text-[10px] font-normal text-slate-400 mt-0.5">成績: ${monopolySavedScore}分${monopolyReviewCount ? ` / 複習 ${monopolyReviewCount} 次` : ' (可複習)'}</span></span>`;
             }
 
             monopolyCard.innerHTML = `
@@ -327,7 +633,8 @@
 
             // 2. 第二關：13項值班挑戰
             ALL_STAGES.forEach(stage => {
-                const isPassed = localStorage.getItem(stage.id) === 'Completed';
+                const isPassed = getPlayerProgressValue(stage.id) === 'Completed';
+                const reviewCount = getPlayerProgressNumber(getReviewCountKey(stage.id));
                 const openDate = stage.openDate ? new Date(`${stage.openDate}T00:00:00`) : null;
                 const isDateOpen = !openDate || today >= openDate;
                 const isUnlocked = isMonopolyPassed && isDateOpen;
@@ -342,7 +649,7 @@
                 let statusBadge = `<span class="text-xs font-bold text-rose-400">🔒 需先通過服儀關</span>`;
                 if (isMonopolyPassed && !isDateOpen) { statusBadge = `<span class="text-xs font-bold text-amber-500">⏳ ${stage.openDate} 開放</span>`; }
                 else if (isUnlocked && !isPassed) { statusBadge = `<span class="text-xs font-bold text-indigo-600 animate-pulse">⚔️ 開始值班挑戰</span>`; } 
-                else if (isPassed) { statusBadge = `<span class="text-xs font-bold text-emerald-600">✅ 考核完成 (可複習)</span>`; }
+                else if (isPassed) { statusBadge = `<span class="text-xs font-bold text-emerald-600">✅ 考核完成${reviewCount ? ` / 複習 ${reviewCount} 次` : ' (可複習)'}</span>`; }
 
                 card.innerHTML = `<div class="flex items-center gap-3 sm:gap-4 text-left"><div class="text-2xl sm:text-3xl">${stage.icon}</div><div><h3 class="font-black text-slate-700 text-sm sm:text-base">${stage.title}</h3><p class="text-[11px] text-slate-400 mt-0.5">${stage.desc}</p></div></div><div>${statusBadge}</div>`;
                 zone.appendChild(card);
@@ -351,7 +658,7 @@
 
         function openMonopolyModal() { 
             isReviewMode = false;
-            if (localStorage.getItem('DressCode') === 'Pass') {
+            if (getPlayerProgressValue('DressCode') === 'Pass') {
                 isMonopolyReviewMode = true;
                 document.getElementById('monopoly-title-ui').innerText = "🔄 服儀大富翁 (複習模式)";
                 document.getElementById('score-label-ui').innerText = "本次複習專業度";
@@ -389,8 +696,8 @@
                 if (score >= 75) { 
                     if (!isMonopolyReviewMode) {
                         document.getElementById('game-msg').innerHTML = `🎉 <span class='text-emerald-600 font-bold'>考核通過！</span> 回到起點完成結算，首通分數 ${score} 分，第二關解鎖。`;
-                        localStorage.setItem('DressCode', 'Pass');
-                        localStorage.setItem('MonopolyScore', score);
+                        setPlayerProgressValue('DressCode', 'Pass');
+                        setPlayerProgressValue('MonopolyScore', score);
                         submitProgressToGoogleForm({
                             eventType: 'monopoly_pass',
                             monopolyScore: score,
@@ -399,13 +706,14 @@
                             stageCompleted: getProgressLabel('DressCode', 'pass')
                         });
                     } else {
+                        const reviewCount = incrementPlayerProgressCount(getReviewCountKey('DressCode'));
                         document.getElementById('game-msg').innerHTML = `🎉 <span class='text-blue-600 font-bold'>複習完成！</span> 回到起點完成本次複習，得分: ${score} 分 (不影響原本進度)。`;
                         submitProgressToGoogleForm({
                             eventType: 'monopoly_review',
                             monopolyScore: score,
                             monopolyPassed: 'Pass',
                             stageId: 'DressCode',
-                            stageCompleted: getProgressLabel('DressCode', 'review')
+                            stageCompleted: getProgressLabel('DressCode', 'review', reviewCount)
                         });
                     }
                     setTimeout(() => { closeMonopolyModal(); renderStageList(); }, 2500);
@@ -479,7 +787,7 @@
         function renderStoryNode() {
             const stage = ALL_STAGES.find(s => s.id === currentStoryStageId);
             const node = stage.script[currentStoryNode];
-            const isStageAlreadyPassed = localStorage.getItem(currentStoryStageId) === 'Completed';
+            const isStageAlreadyPassed = getPlayerProgressValue(currentStoryStageId) === 'Completed';
 
             showModal({
                 bg: "from-purple-500 to-indigo-600", icon: "🤝", 
@@ -492,17 +800,27 @@
                             currentStoryNode = "start"; renderStoryNode(); 
                         } else if (opt.finishStory) { 
                             if (!isStageAlreadyPassed) {
-                                localStorage.setItem(currentStoryStageId, 'Completed');
+                                setPlayerProgressValue(currentStoryStageId, 'Completed');
                                 submitProgressToGoogleForm({
                                     eventType: 'stage_pass',
-                                    monopolyScore: Number(localStorage.getItem('MonopolyScore') || 0),
-                                    monopolyPassed: localStorage.getItem('DressCode') === 'Pass' ? 'Pass' : 'NotPass',
+                                    monopolyScore: getPlayerProgressNumber('MonopolyScore'),
+                                    monopolyPassed: getPlayerProgressValue('DressCode') === 'Pass' ? 'Pass' : 'NotPass',
                                     stageId: currentStoryStageId,
                                     stageCompleted: getProgressLabel(currentStoryStageId, 'pass')
                                 });
                                 alert("🎉 恭喜圓滿通過一日值班實戰考核！");
                             } 
-                            else { alert("🔄 複習完成！護班細節掌握得非常棒！"); }
+                            else {
+                                const reviewCount = incrementPlayerProgressCount(getReviewCountKey(currentStoryStageId));
+                                submitProgressToGoogleForm({
+                                    eventType: 'stage_review',
+                                    monopolyScore: getPlayerProgressNumber('MonopolyScore'),
+                                    monopolyPassed: getPlayerProgressValue('DressCode') === 'Pass' ? 'Pass' : 'NotPass',
+                                    stageId: currentStoryStageId,
+                                    stageCompleted: getProgressLabel(currentStoryStageId, 'review', reviewCount)
+                                });
+                                alert(`🔄 複習完成！目前累計 ${reviewCount} 次。`);
+                            }
                             closeModal(); renderStageList(); 
                         } else { 
                             currentStoryNode = opt.next; renderStoryNode(); 
