@@ -90,6 +90,84 @@
         let isReviewMode = false; 
         let isMonopolyReviewMode = false; 
 
+        // Google Form 串接設定：請替換成你自己的表單資訊
+        const GOOGLE_FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLSd3gR5HOeze0O5kqfncGMGJALhuJLwkImIZ57hpogD3vJNfsw/formResponse"; // 例如: https://docs.google.com/forms/d/e/FORM_ID/formResponse
+        const GOOGLE_FORM_ENTRIES = {
+            playerName: "entry.1160088",      // entry.xxxxx
+            dharmaName: "entry.36714066",     // entry.xxxxx
+            monopolyScore: "",   // entry.xxxxx
+            monopolyPassed: "",  // entry.xxxxx
+            stageId: "",         // entry.xxxxx
+            stageCompleted: "",  // entry.xxxxx
+            appVersion: "",      // entry.xxxxx
+            eventType: "",       // entry.xxxxx
+            eventTime: ""        // entry.xxxxx
+        };
+
+        function isGoogleFormConfigured() {
+            return Boolean(
+                GOOGLE_FORM_ACTION_URL &&
+                GOOGLE_FORM_ENTRIES.playerName
+            );
+        }
+
+        function getPlayerProfile() {
+            let playerName = localStorage.getItem('PlayerName');
+            let dharmaName = localStorage.getItem('DharmaName');
+
+            if (!playerName || !playerName.trim()) {
+                while (!playerName || !playerName.trim()) {
+                    const inputName = prompt('請輸入姓名（必填，用於紀錄闖關成績）') || '';
+                    playerName = inputName.trim();
+                    if (!playerName) {
+                        alert('姓名為必填，請輸入後再繼續。');
+                    }
+                }
+                localStorage.setItem('PlayerName', playerName);
+            }
+
+            if (!dharmaName) {
+                const inputDharmaName = prompt('請輸入法名（選填，可略過）') || '';
+                dharmaName = inputDharmaName.trim();
+                if (dharmaName) localStorage.setItem('DharmaName', dharmaName);
+            }
+
+            return {
+                playerName,
+                dharmaName: dharmaName || ''
+            };
+        }
+
+        function submitProgressToGoogleForm(payload) {
+            if (!isGoogleFormConfigured()) return;
+
+            const { playerName, dharmaName } = getPlayerProfile();
+            const formData = new FormData();
+
+            // 只填已設定的欄位，避免欄位未建立時造成送出失敗
+            const setIfConfigured = (entryId, value) => {
+                if (entryId) formData.append(entryId, value == null ? '' : String(value));
+            };
+
+            setIfConfigured(GOOGLE_FORM_ENTRIES.playerName, playerName);
+            setIfConfigured(GOOGLE_FORM_ENTRIES.dharmaName, dharmaName);
+            setIfConfigured(GOOGLE_FORM_ENTRIES.monopolyScore, payload.monopolyScore);
+            setIfConfigured(GOOGLE_FORM_ENTRIES.monopolyPassed, payload.monopolyPassed);
+            setIfConfigured(GOOGLE_FORM_ENTRIES.stageId, payload.stageId);
+            setIfConfigured(GOOGLE_FORM_ENTRIES.stageCompleted, payload.stageCompleted);
+            setIfConfigured(GOOGLE_FORM_ENTRIES.appVersion, APP_VERSION);
+            setIfConfigured(GOOGLE_FORM_ENTRIES.eventType, payload.eventType);
+            setIfConfigured(GOOGLE_FORM_ENTRIES.eventTime, new Date().toISOString());
+
+            fetch(GOOGLE_FORM_ACTION_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: formData
+            }).catch((err) => {
+                console.warn('Google Form 回報失敗:', err);
+            });
+        }
+
         function withVersion(path) {
             return `${path}?v=${encodeURIComponent(APP_VERSION)}`;
         }
@@ -97,6 +175,7 @@
         async function loadGameData() {
             try {
                 document.getElementById('app-version').innerText = `版本: ${APP_VERSION}`;
+                getPlayerProfile();
 
                 const fetchOptions = {
                     cache: 'no-store',
@@ -218,8 +297,22 @@
                         document.getElementById('game-msg').innerHTML = `🎉 <span class='text-emerald-600 font-bold'>考核通過！</span> 回到起點完成結算，首通分數 ${score} 分，第二關解鎖。`;
                         localStorage.setItem('DressCode', 'Pass');
                         localStorage.setItem('MonopolyScore', score);
+                        submitProgressToGoogleForm({
+                            eventType: 'monopoly_pass',
+                            monopolyScore: score,
+                            monopolyPassed: 'Pass',
+                            stageId: 'DressCode',
+                            stageCompleted: 'Completed'
+                        });
                     } else {
                         document.getElementById('game-msg').innerHTML = `🎉 <span class='text-blue-600 font-bold'>複習完成！</span> 回到起點完成本次複習，得分: ${score} 分 (不影響原本進度)。`;
+                        submitProgressToGoogleForm({
+                            eventType: 'monopoly_review',
+                            monopolyScore: score,
+                            monopolyPassed: 'Pass',
+                            stageId: 'DressCode',
+                            stageCompleted: 'Review'
+                        });
                     }
                     setTimeout(() => { closeMonopolyModal(); renderStageList(); }, 2500);
                 } else { 
@@ -304,7 +397,17 @@
                         if (opt.resetStory) { 
                             currentStoryNode = "start"; renderStoryNode(); 
                         } else if (opt.finishStory) { 
-                            if (!isStageAlreadyPassed) { localStorage.setItem(currentStoryStageId, 'Completed'); alert("🎉 恭喜圓滿通過一日值班實戰考核！"); } 
+                            if (!isStageAlreadyPassed) {
+                                localStorage.setItem(currentStoryStageId, 'Completed');
+                                submitProgressToGoogleForm({
+                                    eventType: 'stage_pass',
+                                    monopolyScore: Number(localStorage.getItem('MonopolyScore') || 0),
+                                    monopolyPassed: localStorage.getItem('DressCode') === 'Pass' ? 'Pass' : 'NotPass',
+                                    stageId: currentStoryStageId,
+                                    stageCompleted: 'Completed'
+                                });
+                                alert("🎉 恭喜圓滿通過一日值班實戰考核！");
+                            } 
                             else { alert("🔄 複習完成！護班細節掌握得非常棒！"); }
                             closeModal(); renderStageList(); 
                         } else { 
