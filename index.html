@@ -193,6 +193,15 @@
                 localStorage.removeItem('DharmaName');
             }
 
+            // 先送一筆資料，方便現場立刻驗證回報通道是否正常
+            submitProgressToGoogleForm({
+                eventType: 'profile_saved',
+                monopolyScore: Number(localStorage.getItem('MonopolyScore') || 0),
+                monopolyPassed: localStorage.getItem('DressCode') === 'Pass' ? 'Pass' : 'NotPass',
+                stageId: 'profile',
+                stageCompleted: '資料填寫完成'
+            });
+
             document.getElementById('profile-modal').classList.add('hidden');
             if (profileResolver) {
                 profileResolver(getPlayerProfile());
@@ -210,6 +219,16 @@
             return new Promise((resolve) => {
                 profileResolver = resolve;
             });
+        }
+
+        function getProgressLabel(stageId, mode = 'pass') {
+            if (stageId === 'DressCode') {
+                return mode === 'review' ? '第一關複習完成' : '第一關完成';
+            }
+            if (stageId === 'reception-duty') {
+                return '第二關完成';
+            }
+            return `${stageId}完成`;
         }
 
         function submitProgressToGoogleForm(payload) {
@@ -377,7 +396,7 @@
                             monopolyScore: score,
                             monopolyPassed: 'Pass',
                             stageId: 'DressCode',
-                            stageCompleted: '第一關完成'
+                            stageCompleted: getProgressLabel('DressCode', 'pass')
                         });
                     } else {
                         document.getElementById('game-msg').innerHTML = `🎉 <span class='text-blue-600 font-bold'>複習完成！</span> 回到起點完成本次複習，得分: ${score} 分 (不影響原本進度)。`;
@@ -386,7 +405,7 @@
                             monopolyScore: score,
                             monopolyPassed: 'Pass',
                             stageId: 'DressCode',
-                            stageCompleted: '第一關複習完成'
+                            stageCompleted: getProgressLabel('DressCode', 'review')
                         });
                     }
                     setTimeout(() => { closeMonopolyModal(); renderStageList(); }, 2500);
@@ -479,7 +498,7 @@
                                     monopolyScore: Number(localStorage.getItem('MonopolyScore') || 0),
                                     monopolyPassed: localStorage.getItem('DressCode') === 'Pass' ? 'Pass' : 'NotPass',
                                     stageId: currentStoryStageId,
-                                    stageCompleted: '第二關完成'
+                                    stageCompleted: getProgressLabel(currentStoryStageId, 'pass')
                                 });
                                 alert("🎉 恭喜圓滿通過一日值班實戰考核！");
                             } 
