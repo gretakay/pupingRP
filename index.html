@@ -677,6 +677,34 @@
         
         function closeMonopolyModal() { document.getElementById('monopoly-modal').classList.add('hidden'); }
 
+        function completeMonopolyRun() {
+            if (!isMonopolyReviewMode) {
+                document.getElementById('game-msg').innerHTML = `🎉 <span class='text-emerald-600 font-bold'>考核通過！</span> 本次得分 ${score} 分，第一關直接過關，第二關已解鎖。`;
+                setPlayerProgressValue('DressCode', 'Pass');
+                setPlayerProgressValue('MonopolyScore', score);
+                submitProgressToGoogleForm({
+                    eventType: 'monopoly_pass',
+                    monopolyScore: score,
+                    monopolyPassed: 'Pass',
+                    stageId: 'DressCode',
+                    stageCompleted: getProgressLabel('DressCode', 'pass')
+                });
+            } else {
+                const reviewCount = incrementPlayerProgressCount(getReviewCountKey('DressCode'));
+                document.getElementById('game-msg').innerHTML = `🎉 <span class='text-blue-600 font-bold'>複習完成！</span> 本次複習得分 ${score} 分 (不影響原本進度)。`;
+                submitProgressToGoogleForm({
+                    eventType: 'monopoly_review',
+                    monopolyScore: score,
+                    monopolyPassed: 'Pass',
+                    stageId: 'DressCode',
+                    stageCompleted: getProgressLabel('DressCode', 'review', reviewCount)
+                });
+            }
+
+            document.getElementById('dice-btn').disabled = true;
+            setTimeout(() => { closeMonopolyModal(); renderStageList(); }, 2500);
+        }
+
         function rollDice() {
             document.getElementById('dice-btn').disabled = true;
             const steps = Math.floor(Math.random() * 3) + 1;
@@ -694,29 +722,7 @@
         function triggerMonopolyCell(pos) {
             if (pos === 0) {
                 if (score >= 75) { 
-                    if (!isMonopolyReviewMode) {
-                        document.getElementById('game-msg').innerHTML = `🎉 <span class='text-emerald-600 font-bold'>考核通過！</span> 回到起點完成結算，首通分數 ${score} 分，第二關解鎖。`;
-                        setPlayerProgressValue('DressCode', 'Pass');
-                        setPlayerProgressValue('MonopolyScore', score);
-                        submitProgressToGoogleForm({
-                            eventType: 'monopoly_pass',
-                            monopolyScore: score,
-                            monopolyPassed: 'Pass',
-                            stageId: 'DressCode',
-                            stageCompleted: getProgressLabel('DressCode', 'pass')
-                        });
-                    } else {
-                        const reviewCount = incrementPlayerProgressCount(getReviewCountKey('DressCode'));
-                        document.getElementById('game-msg').innerHTML = `🎉 <span class='text-blue-600 font-bold'>複習完成！</span> 回到起點完成本次複習，得分: ${score} 分 (不影響原本進度)。`;
-                        submitProgressToGoogleForm({
-                            eventType: 'monopoly_review',
-                            monopolyScore: score,
-                            monopolyPassed: 'Pass',
-                            stageId: 'DressCode',
-                            stageCompleted: getProgressLabel('DressCode', 'review', reviewCount)
-                        });
-                    }
-                    setTimeout(() => { closeMonopolyModal(); renderStageList(); }, 2500);
+                    completeMonopolyRun();
                 } else { 
                     document.getElementById('game-msg').innerText = `已回到起點，目前 ${score} 分，未達 75 分，繼續挑戰累積專業度！`;
                 }
@@ -741,8 +747,12 @@
                             document.getElementById('score-display').innerText = `${score} 分`;
                             document.getElementById('score-display').className = "text-base sm:text-lg font-black text-emerald-500";
                             closeModal();
-                            document.getElementById('game-msg').innerText = "答案正確！專業度獲得提升！";
-                            document.getElementById('dice-btn').disabled = false;
+                            if (score >= 100) {
+                                completeMonopolyRun();
+                            } else {
+                                document.getElementById('game-msg').innerText = "答案正確！專業度獲得提升！";
+                                document.getElementById('dice-btn').disabled = false;
+                            }
                         } else {
                             const penalty = Number(opt.penalty) || 0;
                             if (penalty > 0) {
