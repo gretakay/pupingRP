@@ -10,13 +10,28 @@ const STAGE_DEFINITIONS = [
     scoreKey: 'MonopolyScore'
   },
   {
-    id: 'reception-duty',
-    label: '第二關',
+    id: 'reception-duty-2-1',
+    label: '第二關-1',
     passValue: 'Completed'
   },
   {
-    id: 'desk-duty',
-    label: '第三關',
+    id: 'reception-duty-2-2',
+    label: '第二關-2',
+    passValue: 'Completed'
+  },
+  {
+    id: 'desk-duty-3-1',
+    label: '第三關-1',
+    passValue: 'Completed'
+  },
+  {
+    id: 'desk-duty-3-2',
+    label: '第三關-2',
+    passValue: 'Completed'
+  },
+  {
+    id: 'desk-duty-3-3',
+    label: '第三關-3',
     passValue: 'Completed'
   }
 ];
@@ -467,4 +482,54 @@ function applySummaryColumnFormats(summarySheet) {
       setFormatByHeader(`${stage.label}分數`, '0');
     }
   });
+}
+
+/**
+ * 初始化進度摘要表：根據新的阶段结构重新生成表头和用户数据
+ * 保留用户基本信息(姓名、法名、手機末四碼)，清空所有進度记录
+ * 可在 Google Sheets 的「工具」→「指令碼編輯器」中手动运行
+ */
+function initializeSummarySheetWithNewStages() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const responsesSheet = spreadsheet.getSheetByName(RESPONSES_SHEET_NAME);
+  const summarySheet = getOrCreateSummarySheet(spreadsheet);
+  
+  if (!responsesSheet) {
+    throw new Error('找不到表單回覆工作表');
+  }
+
+  // 從表單回覆中提取所有現有用戶的基本信息
+  const values = responsesSheet.getDataRange().getDisplayValues();
+  if (values.length < 2) {
+    resetSummarySheet(summarySheet);
+    return;
+  }
+
+  const headers = values[0];
+  const columnIndexes = mapColumnIndexes(headers);
+  const userRecords = new Map();
+
+  // 收集所有現有用戶的基本信息
+  values.slice(1).forEach((row) => {
+    const playerName = normalizeText(getCell(row, columnIndexes.playerName));
+    const dharmaName = normalizeText(getCell(row, columnIndexes.dharmaName));
+    const phoneLast4 = normalizePhoneLast4(getCell(row, columnIndexes.phoneLast4));
+
+    if (!playerName || phoneLast4.length !== 4) {
+      return;
+    }
+
+    const key = buildSummaryKey(playerName, dharmaName, phoneLast4);
+    if (!userRecords.has(key)) {
+      userRecords.set(key, createSummaryRecord({
+        playerName,
+        dharmaName,
+        phoneLast4
+      }));
+    }
+  });
+
+  // 寫入清空進度後的用戶記錄
+  writeSummarySheet(summarySheet, Array.from(userRecords.values()));
+  Logger.log(`進度摘要表已根據新阶段结构初始化。保留 ${userRecords.size} 個用戶的基本信息，清空所有進度記錄。`);
 }
