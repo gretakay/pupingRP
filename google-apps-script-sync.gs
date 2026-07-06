@@ -141,9 +141,19 @@ function syncProgressSummaryFromResponses() {
       }
 
       const key = buildSummaryKey(playerName, row.dharmaName, phoneLast4);
-      const existing = summaryMap.get(key) || createSummaryRecord(row);
-      applyProgressRowToSummary(existing, row);
-      summaryMap.set(key, existing);
+      const stageCompleted = normalizeText(row.stageCompleted);
+      const eventType = normalizeText(row.eventType);
+      const existing = summaryMap.get(key);
+
+      // 跳過只是"資料填寫完成"且沒有事件類型且已有既存記錄的行
+      // 這防止了重複提交同一個表單時產生的冗餘記錄
+      if (existing && stageCompleted === '資料填寫完成' && !eventType) {
+        return;
+      }
+
+      const summaryRecord = existing || createSummaryRecord(row);
+      applyProgressRowToSummary(summaryRecord, row);
+      summaryMap.set(key, summaryRecord);
     });
 
   writeSummarySheet(summarySheet, Array.from(summaryMap.values()));
